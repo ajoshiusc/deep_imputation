@@ -37,11 +37,11 @@ else:
 
 # In[ ]:
 
-
-get_ipython().system('python -c "import monai" || pip install -q "monai-weekly[nibabel, tqdm]"')
-get_ipython().system('python -c "import matplotlib" || pip install -q matplotlib')
-# !python -c "import onnxruntime" || pip install -q onnxruntime
-get_ipython().run_line_magic('matplotlib', 'inline')
+if is_notebook():
+    get_ipython().system('python -c "import monai" || pip install -q "monai-weekly[nibabel, tqdm]"')
+    get_ipython().system('python -c "import matplotlib" || pip install -q matplotlib')
+    # !python -c "import onnxruntime" || pip install -q onnxruntime
+    get_ipython().run_line_magic('matplotlib', 'inline')
 
 
 # ## Setup imports
@@ -126,7 +126,7 @@ IS_NOTEBOOK = True # set this if this is a jupyter notebook. False if a python s
 # In[ ]:
 
 
-max_epochs = 150 # 300
+max_epochs = 2 # 300
 val_interval = 2
 
 
@@ -229,8 +229,8 @@ sample_loader = DataLoader(sample_ds, batch_size=2, shuffle=True, num_workers=4)
 # In[ ]:
 
 
-train_subs = Subset(sample_ds, list(range(200)))
-val_subs = Subset(sample_ds, list(range(40)))
+train_subs = Subset(sample_ds, list(range(20)))
+val_subs = Subset(sample_ds, list(range(5)))
 
 train_loader = DataLoader(train_subs, batch_size=1, shuffle=True, num_workers=2)
 val_loader = DataLoader(val_subs, batch_size=1, shuffle=False, num_workers=2)
