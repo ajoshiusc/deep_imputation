@@ -9,9 +9,27 @@
 # Source: BRATS 2016 and 2017 datasets.  
 # Challenge: **Drop some of the modalities randomly and reconstruct it by imputing with a 3D U-Net**
 
+# ### Set parameters
+
+# In[ ]:
+
+
+run_id = 4 # set this to prevent overlapped saving of model and data
+
+DO_MASK = False # Set to True if mask is to be applied while training
+SET_VARIANCE = False # Set to True if variance is to be trained in loss function
+
+max_epochs = 150
+val_interval = 1
+train_data_ratio = 0.5 # ratio of total data (484) to be used for training
+val_data_ratio = 0.1 # ratio of total data (484) to be used for validating
+
+RANDOM_SEED = 0
+
+
 # ## Check if this is a notebook or not
 
-# In[2]:
+# In[ ]:
 
 
 def is_notebook():
@@ -30,12 +48,13 @@ def is_notebook():
 if is_notebook():
     print("This is a Jupyter Notebook.")
 else:
-    print("This is not a Jupyter Notebook.")
+    print("This is a Python script (not a Jupyter Notebook).")
 
 
 # ## Setup environment
 
 # In[ ]:
+
 
 if is_notebook():
     get_ipython().system('python -c "import monai" || pip install -q "monai-weekly[nibabel, tqdm]"')
@@ -114,20 +133,12 @@ print(root_dir)
 # In[ ]:
 
 
-run_id = 3 # set this to prevent overlapped saving of model and data
 save_dir = os.path.join(root_dir, f"run_{run_id}")
-os.makedirs(save_dir, exist_ok=True)
-
-IS_NOTEBOOK = True # set this if this is a jupyter notebook. False if a python script
-
-
-# ## Set parameters
-
-# In[ ]:
-
-
-max_epochs = 150 # 300
-val_interval = 2
+if os.path.exists(save_dir) and os.path.isdir(save_dir):
+    print(f"{save_dir} already exists. Avoid overwrite by updating run_id.")
+    exit()
+else:
+    os.makedirs(save_dir)
 
 
 # ## Set deterministic training for reproducibility
@@ -135,7 +146,7 @@ val_interval = 2
 # In[ ]:
 
 
-set_determinism(seed=0)
+set_determinism(seed=RANDOM_SEED)
 
 
 # Challenge (unsolved): How to ensure only input images have some modalities dropped, and output modalities have the entire data?
@@ -186,6 +197,25 @@ val_transform = Compose(
 # In[ ]:
 
 
+def int_to_bool_binary(int_list, length):
+    # Convert each integer to its base-2 value and represent it as boolean, always ensuring length is 4
+    bool_list = []
+    
+    for num in int_list:
+        # Get the binary representation of the integer (excluding the '0b' prefix)
+        binary_str = bin(num)[2:]
+        # Convert each character in the binary string to a boolean
+        bools = [char == '1' for char in binary_str]
+        # Prepend False (0s) to make the length exactly 4
+        bools_padded = [False] * (length - len(bools)) + bools
+        bool_list.append(bools_padded)
+    
+    return bool_list
+
+
+# In[ ]:
+
+
 class BrainMRIDataset(Dataset):
     def __init__(self, root_dir, transform=None):
         self.root_dir = os.path.join(root_dir, "Task01_BrainTumour")
@@ -195,8 +225,13 @@ class BrainMRIDataset(Dataset):
 
         self.image_filenames = data_json['training']
 
-        np.random.seed(0)
-        self.seq_mask = np.random.rand(len(self.image_filenames), 4) < 0.2
+        np.random.seed(RANDOM_SEED)
+        num_seq = 4
+        if DO_MASK:
+            mask_drop_code = np.random.randint(0, 2**(num_seq) - 1, size=len(self.image_filenames))
+            self.seq_mask = int_to_bool_binary(mask_drop_code, length=num_seq)
+        else:
+            self.seq_mask = np.full((len(self.image_filenames), num_seq), False, dtype=bool)
 
         self.transform = transform
 
@@ -229,8 +264,8 @@ sample_loader = DataLoader(sample_ds, batch_size=2, shuffle=True, num_workers=4)
 # In[ ]:
 
 
-train_subs = Subset(sample_ds, list(range(200)))
-val_subs = Subset(sample_ds, list(range(50)))
+train_subs = Subset(sample_ds, list(range(int(train_data_ratio * len(sample_ds)))))
+val_subs = Subset(sample_ds, list(range(int(val_data_ratio* len(sample_ds)))))
 
 train_loader = DataLoader(train_subs, batch_size=1, shuffle=True, num_workers=2)
 val_loader = DataLoader(val_subs, batch_size=1, shuffle=False, num_workers=2)
@@ -278,11 +313,13 @@ model = UNet(
 
 def GaussianLikelihood(expected_img, output_img):
     # input is 4 channel images, output is 8 channel images
-    # TODO (DONE): Deal sigma<=0 issue by either initializing to 1 or adding a small constant
-    #   Dealt it using sigma
 
     output_img_mean = output_img[:, :4, ...]
-    output_img_log_std = output_img[:, 4:, ...]
+    if SET_VARIANCE:
+        output_img_log_std = output_img[:, 4:, ...]
+    else:
+        output_img_log_std = torch.zeros_like(output_img[:, 4:, ...]) # sigma = 1
+
     cost1 = (expected_img - output_img_mean)**2 / (2*torch.exp(2*output_img_log_std))
 
     cost2 = output_img_log_std
@@ -297,12 +334,8 @@ VAL_AMP = True
 
 # Define the loss function
 loss_function = GaussianLikelihood #nn.MSELoss()
-# loss_function = DiceLoss(smooth_nr=0, smooth_dr=1e-5, squared_pred=True, to_onehot_y=False, sigmoid=True)
 optimizer = torch.optim.Adam(model.parameters(), 1e-4, weight_decay=1e-5)
 lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=max_epochs)
-
-# mse_metric = DiceMetric(include_background=True, reduction="mean")
-# mse_metric_batch = DiceMetric(include_background=True, reduction="mean_batch")
 
 mse_metric = MSEMetric(reduction="mean")
 mse_metric_batch = MSEMetric(reduction="mean_batch")
@@ -433,78 +466,6 @@ print(f"train completed, best_metric: {best_metric:.4f} at epoch: {best_metric_e
 np.save(os.path.join(save_dir, 'epoch_loss_values.npy'), np.array(epoch_loss_values))
 np.save(os.path.join(save_dir, 'metric_values.npy'), np.array(metric_values))
 del epoch_loss_values, metric_values
-
-
-# ### Run from here to re-plot the loss
-
-# In[ ]:
-
-
-# Load the save list
-epoch_loss_values = np.load(os.path.join(save_dir, 'epoch_loss_values.npy')).tolist()
-metric_values = np.load(os.path.join(save_dir, 'metric_values.npy')).tolist()
-
-print(epoch_loss_values)
-print(metric_values)
-
-
-# ## Plot the loss and metric
-
-# In[ ]:
-
-
-if is_notebook():
-    plt.figure("train", (12, 6))
-    plt.subplot(1, 2, 1)
-    plt.title("Epoch Average Loss")
-    x = [i + 1 for i in range(len(epoch_loss_values))]
-    y = epoch_loss_values
-    plt.xlabel("epoch")
-    plt.plot(x, y, color="red")
-    plt.yscale('log')
-    plt.subplot(1, 2, 2)
-    plt.title("Val Mean MSE")
-    x = [val_interval * (i + 1) for i in range(len(metric_values))]
-    y = metric_values
-    plt.xlabel("epoch")
-    plt.plot(x, y, color="green")
-    plt.show()
-
-
-# ## Check best pytorch model output with the input image and label
-
-# In[ ]:
-
-
-if is_notebook():
-    model.load_state_dict(torch.load(os.path.join(save_dir, "best_metric_model.pth")))
-    model.eval()
-    with torch.no_grad():
-        # select one image to evaluate and visualize the model output
-        val_input = sample_ds[6]["image"].unsqueeze(0).to(device)
-        mask_indices = [True, False, False, False]
-        val_input[:, mask_indices, ...] = 0
-        val_output = inference(val_input)
-        # val_output = post_trans(val_output[0])
-        plt.figure("image", (24, 6))
-        for i in range(4):
-            plt.subplot(1, 4, i + 1)
-            plt.title(f"image channel {i}")
-            plt.imshow(val_input[0, i, :, :, 70].detach().cpu(), cmap="gray")
-        plt.show()
-        # visualize the 3 channels model output corresponding to this image
-        plt.figure("output mean", (24, 6))
-        for i in range(4):
-            plt.subplot(1, 4, i + 1)
-            plt.title(f"output channel {i}")
-            plt.imshow(val_output[0, i, :, :, 70].detach().cpu(), cmap="gray")
-
-        plt.figure("output std", (24, 6))
-        for i in range(4):
-            plt.subplot(1, 4, i + 1)
-            plt.title(f"output channel {i}")
-            plt.imshow(val_output[0, i+4, :, :, 70].detach().cpu(), cmap="gray")
-        plt.show()
 
 
 # ## Cleanup data directory
