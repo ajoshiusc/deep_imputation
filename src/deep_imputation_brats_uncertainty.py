@@ -114,7 +114,7 @@ print(root_dir)
 # In[ ]:
 
 
-run_id = 1 # set this to prevent overlapped saving of model and data
+run_id = 3 # set this to prevent overlapped saving of model and data
 save_dir = os.path.join(root_dir, f"run_{run_id}")
 os.makedirs(save_dir, exist_ok=True)
 
@@ -126,7 +126,7 @@ IS_NOTEBOOK = True # set this if this is a jupyter notebook. False if a python s
 # In[ ]:
 
 
-max_epochs = 2 # 300
+max_epochs = 150 # 300
 val_interval = 2
 
 
@@ -229,8 +229,8 @@ sample_loader = DataLoader(sample_ds, batch_size=2, shuffle=True, num_workers=4)
 # In[ ]:
 
 
-train_subs = Subset(sample_ds, list(range(20)))
-val_subs = Subset(sample_ds, list(range(5)))
+train_subs = Subset(sample_ds, list(range(200)))
+val_subs = Subset(sample_ds, list(range(50)))
 
 train_loader = DataLoader(train_subs, batch_size=1, shuffle=True, num_workers=2)
 val_loader = DataLoader(val_subs, batch_size=1, shuffle=False, num_workers=2)
