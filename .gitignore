@@ -1,5 +1,6 @@
 # Custom
 *.out
+figs/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

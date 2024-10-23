@@ -13,18 +13,23 @@
 
 # In[ ]:
 
-
-run_id = 4 # set this to prevent overlapped saving of model and data
-
-DO_MASK = False # Set to True if mask is to be applied while training
-SET_VARIANCE = False # Set to True if variance is to be trained in loss function
-
-max_epochs = 150
+run_id = 7
+DO_MASK = True
+SET_VARIANCE = True
+max_epochs = 100
 val_interval = 1
-train_data_ratio = 0.5 # ratio of total data (484) to be used for training
-val_data_ratio = 0.1 # ratio of total data (484) to be used for validating
-
+train_data_ratio = 0.5
+val_data_ratio = 0.1
 RANDOM_SEED = 0
+
+print("run_id: ", run_id)
+print("DO_MASK: ", DO_MASK)
+print("SET_VARIANCE: ", SET_VARIANCE)
+print("max_epochs: ", max_epochs)
+print("val_interval: ", val_interval)
+print("train_data_ratio: ", train_data_ratio)
+print("val_data_ratio: ", val_data_ratio)
+print("RANDOM_SEED: ", RANDOM_SEED)
 
 
 # ## Check if this is a notebook or not
@@ -210,7 +215,7 @@ def int_to_bool_binary(int_list, length):
         bools_padded = [False] * (length - len(bools)) + bools
         bool_list.append(bools_padded)
     
-    return bool_list
+    return np.array(bool_list)
 
 
 # In[ ]:
