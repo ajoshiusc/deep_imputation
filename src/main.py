@@ -10,25 +10,33 @@
 # Challenge: **Drop some of the modalities randomly and reconstruct it by imputing with a 3D U-Net**
 
 # ### Set parameters
+# 
+# * run_id : set this to prevent overlapped saving of model and data
+# 
+# * DO_MASK : Set to True if mask is to be applied while training
+# * SET_VARIANCE : Set to True if variance is to be trained in loss function
+# * PIXEL_DOWNSAMPLE : How much to scale down each axis. In other words, mm per pixel/voxel
+# 
+# * max_epochs
+# * val_interval : how frequently the validation code should be run
 
 # In[ ]:
 
-run_id = 7
-DO_MASK = True
-SET_VARIANCE = True
-max_epochs = 100
-val_interval = 1
-train_data_ratio = 0.5
-val_data_ratio = 0.1
+
+run_id = 8
+DO_MASK = False
+SET_VARIANCE = False
+PIXEL_DOWNSAMPLE = [4, 4, 4]
+max_epochs = 2000
+val_interval = 10
 RANDOM_SEED = 0
 
 print("run_id: ", run_id)
 print("DO_MASK: ", DO_MASK)
 print("SET_VARIANCE: ", SET_VARIANCE)
+print("PIXEL_DOWNSAMPLE: ", PIXEL_DOWNSAMPLE)
 print("max_epochs: ", max_epochs)
 print("val_interval: ", val_interval)
-print("train_data_ratio: ", train_data_ratio)
-print("val_data_ratio: ", val_data_ratio)
 print("RANDOM_SEED: ", RANDOM_SEED)
 
 
@@ -64,7 +72,6 @@ else:
 if is_notebook():
     get_ipython().system('python -c "import monai" || pip install -q "monai-weekly[nibabel, tqdm]"')
     get_ipython().system('python -c "import matplotlib" || pip install -q matplotlib')
-    # !python -c "import onnxruntime" || pip install -q onnxruntime
     get_ipython().run_line_magic('matplotlib', 'inline')
 
 
@@ -87,6 +94,7 @@ from monai.transforms import (
 from monai.networks.nets import UNet
 from monai.transforms import (
     LoadImage,
+    Resize,
     NormalizeIntensity,
     Orientation,
     RandFlip,
@@ -105,8 +113,7 @@ import pdb
 import os
 import torch
 import torch.nn as nn
-from torch.utils.data import Dataset
-from torch.utils.data import DataLoader, Subset
+from torch.utils.data import Dataset, DataLoader, random_split
 import numpy as np
 import json
 
@@ -139,11 +146,11 @@ print(root_dir)
 
 
 save_dir = os.path.join(root_dir, f"run_{run_id}")
-if os.path.exists(save_dir) and os.path.isdir(save_dir):
+if os.path.exists(save_dir) and os.path.isdir(save_dir) and len(os.listdir(save_dir)) != 0:
     print(f"{save_dir} already exists. Avoid overwrite by updating run_id.")
     exit()
 else:
-    os.makedirs(save_dir)
+    os.makedirs(save_dir, exist_ok=True)
 
 
 # ## Set deterministic training for reproducibility
@@ -154,13 +161,14 @@ else:
 set_determinism(seed=RANDOM_SEED)
 
 
-# Challenge (unsolved): How to ensure only input images have some modalities dropped, and output modalities have the entire data?
-
 # ## Setup transforms for training and validation
 # 
 
 # In[ ]:
 
+
+crop_size = [224, 224, 144]
+resize_size = [crop_size[i]//PIXEL_DOWNSAMPLE[i] for i in range(len(crop_size))]
 
 train_transform = Compose(
     [
@@ -173,7 +181,8 @@ train_transform = Compose(
             pixdim=(1.0, 1.0, 1.0),
             mode=("bilinear", "nearest"),
         ),
-        RandSpatialCrop(roi_size=[224, 224, 144], random_size=False),
+        RandSpatialCrop(roi_size=crop_size, random_size=False),
+        Resize(spatial_size=resize_size),
         RandFlip(prob=0.5, spatial_axis=0),
         RandFlip(prob=0.5, spatial_axis=1),
         RandFlip(prob=0.5, spatial_axis=2),
@@ -182,6 +191,7 @@ train_transform = Compose(
         RandShiftIntensity(offsets=0.1, prob=1.0),
     ]
 )
+
 val_transform = Compose(
     [
         LoadImage(),
@@ -192,6 +202,7 @@ val_transform = Compose(
             pixdim=(1.0, 1.0, 1.0),
             mode=("bilinear", "nearest"),
         ),
+        Resize(spatial_size=resize_size),
         NormalizeIntensity(nonzero=True, channel_wise=True),
     ]
 )
@@ -254,27 +265,46 @@ class BrainMRIDataset(Dataset):
         mask = torch.from_numpy(mask)
 
         return {"image":image, "mask":mask}
-    
 
 
-sample_ds = BrainMRIDataset(
-    root_dir=root_dir,
-    transform=train_transform
-)
-sample_loader = DataLoader(sample_ds, batch_size=2, shuffle=True, num_workers=4)
-
-
-# Consider a subset of train and validation dataset for debugging the training workflow
+# Create training and validation dataset
 
 # In[ ]:
 
 
-train_subs = Subset(sample_ds, list(range(int(train_data_ratio * len(sample_ds)))))
-val_subs = Subset(sample_ds, list(range(int(val_data_ratio* len(sample_ds)))))
+all_dataset = BrainMRIDataset(
+    root_dir=root_dir
+)
 
-train_loader = DataLoader(train_subs, batch_size=1, shuffle=True, num_workers=2)
-val_loader = DataLoader(val_subs, batch_size=1, shuffle=False, num_workers=2)
+# Define the split sizes
+train_size = int(0.8 * len(all_dataset))
+val_size = len(all_dataset) - train_size
+split_sizes = [train_size, val_size]
+
+# Split the dataset
+train_dataset, val_dataset = random_split(all_dataset, split_sizes)
+
+train_dataset.dataset.transform = train_transform
+val_dataset.dataset.transform = val_transform
+
+# Create data loaders
+train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True)
+val_loader = DataLoader(val_dataset, batch_size=8, shuffle=False)
+
 print(len(train_loader), len(val_loader))
+
+
+# In[ ]:
+
+
+# temp code
+print("train")
+print(len(train_dataset))
+print(train_loader.batch_size)
+print(len(train_dataset) // train_loader.batch_size)
+print("val")
+print(len(val_dataset))
+print(val_loader.batch_size)
 
 
 # ## Check data shape and visualize
@@ -284,14 +314,20 @@ print(len(train_loader), len(val_loader))
 
 # pick one image from DecathlonDataset to visualize and check the 4 channels
 if is_notebook():
-    val_data_example = sample_ds[6]
-    print(f"image shape: {val_data_example['image'].shape}")
+    channels = ["FLAIR", "T1w", "T1gd", "T2w"]
+    val_data_example = val_dataset[6]['image']
+    _, im_length, im_width, im_height = val_data_example.shape
+    print(f"image shape: {val_data_example.shape}")
     plt.figure("image", (24, 6))
     for i in range(4):
         plt.subplot(1, 4, i + 1)
-        plt.title(f"image channel {i}")
-        plt.imshow(val_data_example["image"][i, :, :, 60].detach().cpu(), cmap="gray")
-        plt.colorbar()
+        plt.title(channels[i], fontsize=30)
+        brain_slice = val_data_example[i, :, :, im_height//2].detach().cpu().T
+        plt.xticks([0, im_width - 1], [0, im_width - 1], fontsize=15)
+        plt.yticks([0, im_length - 1], [0, im_length - 1], fontsize=15)
+        plt.imshow(brain_slice, cmap="gray")
+        cbar = plt.colorbar()
+        cbar.ax.tick_params(labelsize=20)
     plt.show()
 
 
@@ -316,6 +352,20 @@ model = UNet(
 # In[ ]:
 
 
+# Calculate and display the total number of parameters
+def count_parameters(model):
+    return sum(p.numel() for p in model.parameters() if p.requires_grad)
+
+total_params = count_parameters(model)
+print(f"Total number of trainable parameters: {total_params}")
+
+# Print the model architecture
+print("Model Architecture:\n", model)
+
+
+# In[ ]:
+
+
 def GaussianLikelihood(expected_img, output_img):
     # input is 4 channel images, output is 8 channel images
 
@@ -326,7 +376,6 @@ def GaussianLikelihood(expected_img, output_img):
         output_img_log_std = torch.zeros_like(output_img[:, 4:, ...]) # sigma = 1
 
     cost1 = (expected_img - output_img_mean)**2 / (2*torch.exp(2*output_img_log_std))
-
     cost2 = output_img_log_std
 
     return torch.mean(cost1 + cost2)
@@ -367,8 +416,6 @@ scaler = torch.cuda.amp.GradScaler()
 torch.backends.cudnn.benchmark = True
 
 
-# ### Run the following cells only if performing a new trial/run
-
 # In[ ]:
 
 
@@ -407,7 +454,7 @@ for epoch in range(max_epochs):
         scaler.update()
         epoch_loss += loss.item()
         print(
-            f"{step}/{len(train_subs) // train_loader.batch_size}"
+            f"{step}/{len(train_loader)}"
             f", train_loss: {loss.item():.4f}"
             f", step time: {(time.time() - step_start):.4f}"
         )
@@ -425,7 +472,7 @@ for epoch in range(max_epochs):
                     batch_data["mask"].to(device),
                 )
                 val_outputs_gt = val_inputs.clone()
-                val_inputs = val_inputs*~mask[:,:,None,None,None]
+                val_inputs = val_inputs*~val_mask[:,:,None,None,None]
                 val_outputs = inference(val_inputs)
                 val_outputs = val_outputs[:,:4,...]
                 # val_outputs = [post_trans(i) for i in val_outputs]

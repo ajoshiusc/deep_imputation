@@ -1,10 +1,22 @@
-
-COMPLETED
+TODO
 ----
-job _
-run_id = 8
+job 26601282
+run_id = 9
 DO_MASK = False
 SET_VARIANCE = True
+PIXEL_DOWNSAMPLE = [4, 4, 4]
+max_epochs = 2000
+val_interval = 10
+
+TODO
+----
+job 26601164
+run_id = 8
+DO_MASK = False
+SET_VARIANCE = False
+PIXEL_DOWNSAMPLE = [4, 4, 4]
+max_epochs = 2000
+val_interval = 10
 
 INTERESTED!!
 -------
