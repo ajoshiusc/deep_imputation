@@ -1,6 +1,4 @@
-#!/usr/bin/env python
-# coding: utf-8
-
+# %% [markdown]
 # # Deep Imputation of BraTS dataset with MONAI
 # 
 # The dataset comes from http://medicaldecathlon.com/.  
@@ -9,6 +7,11 @@
 # Source: BRATS 2016 and 2017 datasets.  
 # Challenge: **Drop some of the modalities randomly and reconstruct it by imputing with a 3D U-Net**
 
+# %%
+from logger import Logger
+logger = Logger(log_level='DEBUG')
+
+# %% [markdown]
 # ### Set parameters
 # 
 # * run_id : set this to prevent overlapped saving of model and data
@@ -19,32 +22,35 @@
 # 
 # * max_epochs
 # * val_interval : how frequently the validation code should be run
+# * TRAIN_RATIO: proportion of total dataset to be used for training. Rest will be used for validating
 
-# In[ ]:
-
-
-run_id = 8
+# %%
+run_id = 1
 DO_MASK = False
 SET_VARIANCE = False
 PIXEL_DOWNSAMPLE = [4, 4, 4]
-max_epochs = 2000
+max_epochs = 400
 val_interval = 10
+TRAIN_RATIO = 0.8
 RANDOM_SEED = 0
+root_dir = "/scratch1/sachinsa/monai_data_1"
+use_sample = True
 
-print("run_id: ", run_id)
-print("DO_MASK: ", DO_MASK)
-print("SET_VARIANCE: ", SET_VARIANCE)
-print("PIXEL_DOWNSAMPLE: ", PIXEL_DOWNSAMPLE)
-print("max_epochs: ", max_epochs)
-print("val_interval: ", val_interval)
-print("RANDOM_SEED: ", RANDOM_SEED)
+logger.info("PARAMETERS\n-----------------")
+logger.info(f"run_id: {run_id}")
+logger.info(f"DO_MASK: {DO_MASK}")
+logger.info(f"SET_VARIANCE: {SET_VARIANCE}")
+logger.info(f"PIXEL_DOWNSAMPLE: {PIXEL_DOWNSAMPLE}")
+logger.info(f"max_epochs: {max_epochs}")
+logger.info(f"val_interval: {val_interval}")
+logger.info(f"TRAIN_RATIO: {TRAIN_RATIO}")
+logger.info(f"RANDOM_SEED: {RANDOM_SEED}")
+logger.info(f"Root dir: {root_dir}\n")
 
-
+# %% [markdown]
 # ## Check if this is a notebook or not
 
-# In[ ]:
-
-
+# %%
 def is_notebook():
     try:
         shell = get_ipython().__class__.__name__
@@ -59,27 +65,23 @@ def is_notebook():
 
 # Example usage
 if is_notebook():
-    print("This is a Jupyter Notebook.")
+    logger.debug("This is a Jupyter Notebook.")
 else:
-    print("This is a Python script (not a Jupyter Notebook).")
+    logger.debug("This is a Python script (not a Jupyter Notebook).")
 
-
+# %% [markdown]
 # ## Setup environment
 
-# In[ ]:
+# %%
+# if is_notebook():
+#     get_ipython().system('python -c "import monai" || pip install -q "monai-weekly[nibabel, tqdm]"')
+#     get_ipython().system('python -c "import matplotlib" || pip install -q matplotlib')
+#     get_ipython().run_line_magic('matplotlib', 'inline')
 
-
-if is_notebook():
-    get_ipython().system('python -c "import monai" || pip install -q "monai-weekly[nibabel, tqdm]"')
-    get_ipython().system('python -c "import matplotlib" || pip install -q matplotlib')
-    get_ipython().run_line_magic('matplotlib', 'inline')
-
-
+# %% [markdown]
 # ## Setup imports
 
-# In[ ]:
-
-
+# %%
 import os
 import shutil
 import tempfile
@@ -101,6 +103,7 @@ from monai.transforms import (
     RandScaleIntensity,
     RandShiftIntensity,
     RandSpatialCrop,
+    CenterSpatialCrop,
     Spacing,
     EnsureType,
     EnsureChannelFirst,
@@ -119,54 +122,40 @@ import json
 
 print_config()
 
-
+# %% [markdown]
 # ## Setup data directory
 # 
 # You can specify a directory with the `MONAI_DATA_DIRECTORY` environment variable.  
 # This allows you to save results and reuse downloads.  
 # If not specified a temporary directory will be used.
 
-# In[ ]:
-
-
-os.environ["MONAI_DATA_DIRECTORY"] = "/scratch1/sachinsa/monai_data_1"
-
-
-# In[ ]:
-
-
+# %%
+os.environ["MONAI_DATA_DIRECTORY"] = root_dir
 directory = os.environ.get("MONAI_DATA_DIRECTORY")
 if directory is not None:
     os.makedirs(directory, exist_ok=True)
 root_dir = tempfile.mkdtemp() if directory is None else directory
-print(root_dir)
+logger.debug(f"Root dir: {root_dir}")
 
-
-# In[ ]:
-
-
+# %%
 save_dir = os.path.join(root_dir, f"run_{run_id}")
 if os.path.exists(save_dir) and os.path.isdir(save_dir) and len(os.listdir(save_dir)) != 0:
-    print(f"{save_dir} already exists. Avoid overwrite by updating run_id.")
+    logger.warning(f"{save_dir} already exists. Avoid overwrite by updating run_id.")
     exit()
 else:
     os.makedirs(save_dir, exist_ok=True)
 
+# %% [markdown]
+# ### Set deterministic training for reproducibility
 
-# ## Set deterministic training for reproducibility
-
-# In[ ]:
-
-
+# %%
 set_determinism(seed=RANDOM_SEED)
 
-
+# %% [markdown]
 # ## Setup transforms for training and validation
 # 
 
-# In[ ]:
-
-
+# %%
 crop_size = [224, 224, 144]
 resize_size = [crop_size[i]//PIXEL_DOWNSAMPLE[i] for i in range(len(crop_size))]
 
@@ -202,17 +191,16 @@ val_transform = Compose(
             pixdim=(1.0, 1.0, 1.0),
             mode=("bilinear", "nearest"),
         ),
+        CenterSpatialCrop(roi_size=crop_size), # added this because model was not handling 155dims
         Resize(spatial_size=resize_size),
         NormalizeIntensity(nonzero=True, channel_wise=True),
     ]
 )
 
-
+# %% [markdown]
 # ## Custom Dataset to load MRI and mask
 
-# In[ ]:
-
-
+# %%
 def int_to_bool_binary(int_list, length):
     # Convert each integer to its base-2 value and represent it as boolean, always ensuring length is 4
     bool_list = []
@@ -228,10 +216,7 @@ def int_to_bool_binary(int_list, length):
     
     return np.array(bool_list)
 
-
-# In[ ]:
-
-
+# %%
 class BrainMRIDataset(Dataset):
     def __init__(self, root_dir, transform=None):
         self.root_dir = os.path.join(root_dir, "Task01_BrainTumour")
@@ -266,58 +251,49 @@ class BrainMRIDataset(Dataset):
 
         return {"image":image, "mask":mask}
 
-
+# %% [markdown]
 # Create training and validation dataset
 
-# In[ ]:
-
+# %%
+from torch.utils.data import Subset
 
 all_dataset = BrainMRIDataset(
     root_dir=root_dir
 )
 
-# Define the split sizes
-train_size = int(0.8 * len(all_dataset))
-val_size = len(all_dataset) - train_size
-split_sizes = [train_size, val_size]
-
 # Split the dataset
-train_dataset, val_dataset = random_split(all_dataset, split_sizes)
+train_dataset, val_dataset = random_split(all_dataset, [TRAIN_RATIO, 1-TRAIN_RATIO],
+                                          generator=torch.Generator().manual_seed(RANDOM_SEED))
 
 train_dataset.dataset.transform = train_transform
 val_dataset.dataset.transform = val_transform
 
+if use_sample:
+    train_dataset = Subset(train_dataset, list(range(20)))
+    val_dataset = Subset(train_dataset, list(range(5)))
+
+logger.debug("Data loading...")
+
 # Create data loaders
-train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True)
-val_loader = DataLoader(val_dataset, batch_size=8, shuffle=False)
+BATCHSIZE_TRAIN, BATCHSIZE_VAL = 4, 2
+train_loader = DataLoader(train_dataset, batch_size=BATCHSIZE_TRAIN, shuffle=True)
+val_loader = DataLoader(val_dataset, batch_size=BATCHSIZE_VAL, shuffle=False)
 
-print(len(train_loader), len(val_loader))
+logger.debug("Data loaded")
+logger.debug(f"Length of dataset: {len(train_dataset)}, {len(val_dataset)}")
+logger.debug(f"Batch-size: {BATCHSIZE_TRAIN}, {BATCHSIZE_VAL}")
+logger.debug(f"Length of data-loaders: {len(train_loader)}, {len(val_loader)}")
 
-
-# In[ ]:
-
-
-# temp code
-print("train")
-print(len(train_dataset))
-print(train_loader.batch_size)
-print(len(train_dataset) // train_loader.batch_size)
-print("val")
-print(len(val_dataset))
-print(val_loader.batch_size)
-
-
+# %% [markdown]
 # ## Check data shape and visualize
 
-# In[ ]:
-
-
+# %%
 # pick one image from DecathlonDataset to visualize and check the 4 channels
 if is_notebook():
     channels = ["FLAIR", "T1w", "T1gd", "T2w"]
     val_data_example = val_dataset[6]['image']
     _, im_length, im_width, im_height = val_data_example.shape
-    print(f"image shape: {val_data_example.shape}")
+    logger.debug(f"image shape: {val_data_example.shape}")
     plt.figure("image", (24, 6))
     for i in range(4):
         plt.subplot(1, 4, i + 1)
@@ -330,14 +306,13 @@ if is_notebook():
         cbar.ax.tick_params(labelsize=20)
     plt.show()
 
-
+# %% [markdown]
 # ## Create Model, Loss, Optimizer
 
+# %% [markdown]
 # **Define a 3D Unet**
 
-# In[ ]:
-
-
+# %%
 device = torch.device("cuda:0")
 model = UNet(
     spatial_dims=3, # 3D
@@ -347,25 +322,23 @@ model = UNet(
     strides=(2, 2),
     num_res_units=2
 ).to(device)
+logger.debug("Model defined")
 
-
-# In[ ]:
-
-
+# %%
 # Calculate and display the total number of parameters
 def count_parameters(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
 total_params = count_parameters(model)
-print(f"Total number of trainable parameters: {total_params}")
+logger.debug(f"Total number of trainable parameters: {total_params}")
 
 # Print the model architecture
-print("Model Architecture:\n", model)
+logger.debug(f"Model Architecture:\n {model}")
 
+# %% [markdown]
+# ### Define Loss (Guassian Likelihood)
 
-# In[ ]:
-
-
+# %%
 def GaussianLikelihood(expected_img, output_img):
     # input is 4 channel images, output is 8 channel images
 
@@ -380,10 +353,7 @@ def GaussianLikelihood(expected_img, output_img):
 
     return torch.mean(cost1 + cost2)
 
-
-# In[ ]:
-
-
+# %%
 VAL_AMP = True
 
 # Define the loss function
@@ -404,21 +374,18 @@ def inference(input):
         return output
 
     if VAL_AMP:
-        with torch.cuda.amp.autocast():
+        with torch.amp.autocast('cuda'):
             return _compute(input)
     else:
         return _compute(input)
 
 
 # use amp to accelerate training
-scaler = torch.cuda.amp.GradScaler()
+scaler = torch.amp.GradScaler('cuda')
 # enable cuDNN benchmark
 torch.backends.cudnn.benchmark = True
 
-
-# In[ ]:
-
-
+# %%
 best_metric = -1
 best_metric_epoch = -1
 best_metrics_epochs_and_time = [[], [], []]
@@ -428,11 +395,12 @@ metric_values_tc = []
 metric_values_wt = []
 metric_values_et = []
 
+logger.debug("Beginning training...")
 total_start = time.time()
 for epoch in range(max_epochs):
     epoch_start = time.time()
-    print("-" * 10)
-    print(f"epoch {epoch + 1}/{max_epochs}")
+    logger.info("-" * 10)
+    logger.info(f"epoch {epoch + 1}/{max_epochs}")
     model.train()
     epoch_loss = 0
     step = 0
@@ -444,7 +412,7 @@ for epoch in range(max_epochs):
             batch_data["mask"].to(device),
         )
         optimizer.zero_grad()
-        with torch.cuda.amp.autocast():
+        with torch.amp.autocast('cuda'):
             outputs_gt = inputs.clone()
             inputs = inputs*~mask[:,:,None,None,None]
             outputs = model(inputs)
@@ -453,7 +421,7 @@ for epoch in range(max_epochs):
         scaler.step(optimizer)
         scaler.update()
         epoch_loss += loss.item()
-        print(
+        logger.info(
             f"{step}/{len(train_loader)}"
             f", train_loss: {loss.item():.4f}"
             f", step time: {(time.time() - step_start):.4f}"
@@ -461,7 +429,7 @@ for epoch in range(max_epochs):
     lr_scheduler.step()
     epoch_loss /= step
     epoch_loss_values.append(epoch_loss)
-    print(f"epoch {epoch + 1} average loss: {epoch_loss:.4f}")
+    logger.info(f"epoch {epoch + 1} average loss: {epoch_loss:.4f}")
 
     if (epoch + 1) % val_interval == 0:
         model.eval()
@@ -495,38 +463,35 @@ for epoch in range(max_epochs):
                     model.state_dict(),
                     os.path.join(save_dir, "best_metric_model.pth"),
                 )
-                print("saved new best metric model")
-            print(
+                logger.info("saved new best metric model")
+                # Save the loss list
+                np.save(os.path.join(save_dir, 'epoch_loss_values.npy'), np.array(epoch_loss_values))
+                np.save(os.path.join(save_dir, 'metric_values.npy'), np.array(metric_values))
+            logger.info(
                 f"current epoch: {epoch + 1} current mean mse: {metric:.4f}"
                 f"\nbest mean metric: {best_metric:.4f}"
                 f" at epoch: {best_metric_epoch}"
             )
-    print(f"time consuming of epoch {epoch + 1} is: {(time.time() - epoch_start):.4f}")
+    logger.info(f"time consuming of epoch {epoch + 1} is: {(time.time() - epoch_start):.4f}")
 total_time = time.time() - total_start
 
+# %%
+logger.info(f"train completed, best_metric: {best_metric:.4f} at epoch: {best_metric_epoch}, total time: {total_time}.")
 
-# In[ ]:
-
-
-print(f"train completed, best_metric: {best_metric:.4f} at epoch: {best_metric_epoch}, total time: {total_time}.")
-
-
-# In[ ]:
-
-
+# %%
 # Save the loss list
 np.save(os.path.join(save_dir, 'epoch_loss_values.npy'), np.array(epoch_loss_values))
 np.save(os.path.join(save_dir, 'metric_values.npy'), np.array(metric_values))
 del epoch_loss_values, metric_values
+logger.debug("training loss info saved")
 
-
+# %% [markdown]
 # ## Cleanup data directory
 # 
 # Remove directory if a temporary was used.
 
-# In[ ]:
-
-
+# %%
 if directory is None:
     shutil.rmtree(root_dir)
+
 
