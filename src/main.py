@@ -25,16 +25,16 @@ logger = Logger(log_level='DEBUG')
 # * TRAIN_RATIO: proportion of total dataset to be used for training. Rest will be used for validating
 
 # %%
-run_id = 1
+run_id = 2
 DO_MASK = False
 SET_VARIANCE = False
-PIXEL_DOWNSAMPLE = [4, 4, 4]
-max_epochs = 400
+PIXEL_DOWNSAMPLE = [2, 2, 2]
+max_epochs = 100
 val_interval = 10
 TRAIN_RATIO = 0.8
+TRAIN_DATA_SIZE = 100
 RANDOM_SEED = 0
 root_dir = "/scratch1/sachinsa/monai_data_1"
-use_sample = True
 
 logger.info("PARAMETERS\n-----------------")
 logger.info(f"run_id: {run_id}")
@@ -171,7 +171,7 @@ train_transform = Compose(
             mode=("bilinear", "nearest"),
         ),
         RandSpatialCrop(roi_size=crop_size, random_size=False),
-        Resize(spatial_size=resize_size),
+        Resize(spatial_size=resize_size, mode='nearest'),
         RandFlip(prob=0.5, spatial_axis=0),
         RandFlip(prob=0.5, spatial_axis=1),
         RandFlip(prob=0.5, spatial_axis=2),
@@ -192,7 +192,7 @@ val_transform = Compose(
             mode=("bilinear", "nearest"),
         ),
         CenterSpatialCrop(roi_size=crop_size), # added this because model was not handling 155dims
-        Resize(spatial_size=resize_size),
+        Resize(spatial_size=resize_size, mode='nearest'),
         NormalizeIntensity(nonzero=True, channel_wise=True),
     ]
 )
@@ -268,16 +268,17 @@ train_dataset, val_dataset = random_split(all_dataset, [TRAIN_RATIO, 1-TRAIN_RAT
 train_dataset.dataset.transform = train_transform
 val_dataset.dataset.transform = val_transform
 
-if use_sample:
-    train_dataset = Subset(train_dataset, list(range(20)))
-    val_dataset = Subset(train_dataset, list(range(5)))
+if TRAIN_DATA_SIZE:
+    train_dataset = Subset(train_dataset, list(range(TRAIN_DATA_SIZE)))
+    val_dataset = Subset(train_dataset, list(range(TRAIN_DATA_SIZE//4)))
 
 logger.debug("Data loading...")
 
 # Create data loaders
-BATCHSIZE_TRAIN, BATCHSIZE_VAL = 4, 2
-train_loader = DataLoader(train_dataset, batch_size=BATCHSIZE_TRAIN, shuffle=True)
-val_loader = DataLoader(val_dataset, batch_size=BATCHSIZE_VAL, shuffle=False)
+BATCHSIZE_TRAIN, BATCHSIZE_VAL = 2, 2
+train_loader = DataLoader(train_dataset, batch_size=BATCHSIZE_TRAIN, shuffle=True,
+    num_workers=8)
+val_loader = DataLoader(val_dataset, batch_size=BATCHSIZE_VAL, shuffle=False, num_workers=8)
 
 logger.debug("Data loaded")
 logger.debug(f"Length of dataset: {len(train_dataset)}, {len(val_dataset)}")
@@ -291,7 +292,7 @@ logger.debug(f"Length of data-loaders: {len(train_loader)}, {len(val_loader)}")
 # pick one image from DecathlonDataset to visualize and check the 4 channels
 if is_notebook():
     channels = ["FLAIR", "T1w", "T1gd", "T2w"]
-    val_data_example = val_dataset[6]['image']
+    val_data_example = val_dataset[0]['image']
     _, im_length, im_width, im_height = val_data_example.shape
     logger.debug(f"image shape: {val_data_example.shape}")
     plt.figure("image", (24, 6))
@@ -404,8 +405,9 @@ for epoch in range(max_epochs):
     model.train()
     epoch_loss = 0
     step = 0
+    step_start = time.time()
     for batch_data in train_loader:
-        step_start = time.time()
+        data_loaded_time = time.time() - step_start
         step += 1
         inputs, mask = (
             batch_data["image"].to(device),
@@ -424,8 +426,10 @@ for epoch in range(max_epochs):
         logger.info(
             f"{step}/{len(train_loader)}"
             f", train_loss: {loss.item():.4f}"
-            f", step time: {(time.time() - step_start):.4f}"
+            f", data-load time: {(data_loaded_time):.4f}"
+            f", total-step time: {(time.time() - step_start):.4f}"
         )
+        step_start = time.time()
     lr_scheduler.step()
     epoch_loss /= step
     epoch_loss_values.append(epoch_loss)
@@ -447,7 +451,7 @@ for epoch in range(max_epochs):
                 mse_metric(y_pred=val_outputs, y=val_outputs_gt)
                 mse_metric_batch(y_pred=val_outputs, y=val_outputs_gt)
 
-            metric = mse_metric.aggregate().item()
+            metric = 1-mse_metric.aggregate().item()
             metric_values.append(metric)
             metric_batch = mse_metric_batch.aggregate()
             mse_metric.reset()
@@ -464,9 +468,10 @@ for epoch in range(max_epochs):
                     os.path.join(save_dir, "best_metric_model.pth"),
                 )
                 logger.info("saved new best metric model")
-                # Save the loss list
-                np.save(os.path.join(save_dir, 'epoch_loss_values.npy'), np.array(epoch_loss_values))
-                np.save(os.path.join(save_dir, 'metric_values.npy'), np.array(metric_values))
+                
+            # Save the loss list
+            np.save(os.path.join(save_dir, 'epoch_loss_values.npy'), np.array(epoch_loss_values))
+            np.save(os.path.join(save_dir, 'metric_values.npy'), np.array(metric_values))
             logger.info(
                 f"current epoch: {epoch + 1} current mean mse: {metric:.4f}"
                 f"\nbest mean metric: {best_metric:.4f}"
@@ -484,14 +489,5 @@ np.save(os.path.join(save_dir, 'epoch_loss_values.npy'), np.array(epoch_loss_val
 np.save(os.path.join(save_dir, 'metric_values.npy'), np.array(metric_values))
 del epoch_loss_values, metric_values
 logger.debug("training loss info saved")
-
-# %% [markdown]
-# ## Cleanup data directory
-# 
-# Remove directory if a temporary was used.
-
-# %%
-if directory is None:
-    shutil.rmtree(root_dir)
 
 
