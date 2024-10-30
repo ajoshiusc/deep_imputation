@@ -25,11 +25,11 @@ logger = Logger(log_level='DEBUG')
 # * TRAIN_RATIO: proportion of total dataset to be used for training. Rest will be used for validating
 
 # %%
-run_id = 0
+run_id = 82
 DO_MASK = True
 SET_VARIANCE = True
 max_epochs = 600
-TRAIN_DATA_SIZE = 200
+TRAIN_DATA_SIZE = 250
 BATCHSIZE_TRAIN = 2
 PIXEL_DOWNSAMPLE = [2, 2, 2]
 val_interval = 10
@@ -38,6 +38,14 @@ RANDOM_SEED = 0
 CONTINUE_TRAINING = False
 TRAIN_DATA_SHUFFLE = True
 root_dir = "/scratch1/sachinsa/monai_data_1"
+
+# test code sanity (for silly errors)
+SANITY_CHECK = False
+if SANITY_CHECK:
+    run_id = 0
+    max_epochs = 15
+    TRAIN_DATA_SIZE = 10
+    val_interval = 2
 
 logger.info("PARAMETERS\n-----------------")
 logger.info(f"run_id: {run_id}")
@@ -122,7 +130,7 @@ from dataset import BrainMRIDataset
 save_dir = os.path.join(root_dir, f"run_{run_id}")
 if not CONTINUE_TRAINING and os.path.exists(save_dir) and os.path.isdir(save_dir) and len(os.listdir(save_dir)) != 0:
     logger.warning(f"{save_dir} already exists. Avoid overwrite by updating run_id.")
-    exit()
+    # exit()
 else:
     os.makedirs(save_dir, exist_ok=True)
 
@@ -287,14 +295,12 @@ if CONTINUE_TRAINING:
         epoch_loss_values = training_data['epoch_loss_values']
         metric_values = training_data['metric_values']
 
-
 # %% [markdown]
-# ### Define Loss (Guassian Likelihood)
+# ### Define Loss (Guassian Likelihood and MSE)
 
 # %%
-def GaussianNLLLoss_custom(outputs, target):
+def gaussian_nll_loss(outputs, target):
     # input is 4 channel images, outputs is 8 channel images
-
     outputs_mean = outputs[:, :4, ...]
     if not SET_VARIANCE:
         log_std = torch.zeros_like(outputs_mean) # sigma = 1
@@ -312,8 +318,14 @@ def GaussianNLLLoss_custom(outputs, target):
 
     return torch.mean(cost1 + cost2)
 
-# Define the loss function
-loss_function = GaussianNLLLoss_custom
+def mse_loss(outputs, target):
+    return torch.nn.functional.mse_loss(outputs[:, :4, ...], target)
+
+def loss_scheduler(epoch):
+    if 500 < epoch < 600:
+        return mse_loss
+    else:
+        return gaussian_nll_loss
 
 # %%
 mse_metric = MSEMetric(reduction="mean")
@@ -346,6 +358,7 @@ for epoch in range(ep_start, max_epochs+1):
     model.train()
     epoch_loss = 0
     step = 0
+    criterion = loss_scheduler(epoch)
     step_start = time.time()
     for batch_data in train_loader:
         data_loaded_time = time.time() - step_start
@@ -365,7 +378,7 @@ for epoch in range(ep_start, max_epochs+1):
                     print(f"NaN found in gradient of parameter: {name}")
                     exit()
             outputs = model(inputs)            
-            loss = loss_function(outputs, target)
+            loss = criterion(outputs, target)
         scaler.scale(loss).backward()
         scaler.step(optimizer)
         scaler.update()
