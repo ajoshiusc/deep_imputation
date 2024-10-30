@@ -40,18 +40,18 @@ TRAIN_DATA_SHUFFLE = True
 root_dir = "/scratch1/sachinsa/monai_data_1"
 
 logger.info("PARAMETERS\n-----------------")
-logger.info("run_id: {run_id}")
-logger.info("DO_MASK: {DO_MASK}")
-logger.info("SET_VARIANCE: {SET_VARIANCE}")
-logger.info("max_epochs: {max_epochs}")
-logger.info("TRAIN_DATA_SIZE: {TRAIN_DATA_SIZE}")
-logger.info("BATCHSIZE_TRAIN: {BATCHSIZE_TRAIN}")
-logger.info("PIXEL_DOWNSAMPLE: {PIXEL_DOWNSAMPLE}")
-logger.info("val_interval: {val_interval}")
-logger.info("TRAIN_RATIO: {TRAIN_RATIO}")
-logger.info("RANDOM_SEED: {RANDOM_SEED}")
-logger.info("CONTINUE_TRAINING: {CONTINUE_TRAINING}")
-logger.info("TRAIN_DATA_SHUFFLE: {TRAIN_DATA_SHUFFLE}")
+logger.info(f"run_id: {run_id}")
+logger.info(f"DO_MASK: {DO_MASK}")
+logger.info(f"SET_VARIANCE: {SET_VARIANCE}")
+logger.info(f"max_epochs: {max_epochs}")
+logger.info(f"TRAIN_DATA_SIZE: {TRAIN_DATA_SIZE}")
+logger.info(f"BATCHSIZE_TRAIN: {BATCHSIZE_TRAIN}")
+logger.info(f"PIXEL_DOWNSAMPLE: {PIXEL_DOWNSAMPLE}")
+logger.info(f"val_interval: {val_interval}")
+logger.info(f"TRAIN_RATIO: {TRAIN_RATIO}")
+logger.info(f"RANDOM_SEED: {RANDOM_SEED}")
+logger.info(f"CONTINUE_TRAINING: {CONTINUE_TRAINING}")
+logger.info(f"TRAIN_DATA_SHUFFLE: {TRAIN_DATA_SHUFFLE}")
 logger.info(f"root_dir: {root_dir}")
 print("")
 
@@ -203,8 +203,6 @@ if TRAIN_DATA_SIZE:
     train_dataset = Subset(train_dataset, list(range(TRAIN_DATA_SIZE)))
     val_dataset = Subset(train_dataset, list(range(TRAIN_DATA_SIZE//4)))
 
-logger.debug("Data loading...")
-
 BATCHSIZE_VAL = BATCHSIZE_TRAIN
 
 # Create data loaders
@@ -280,8 +278,7 @@ def GaussianNLLLoss_custom(outputs, target):
         log_std = torch.zeros_like(outputs_mean) # sigma = 1
     else:
         log_std = outputs[:, 4:, ...]
-        # eps = np.log(1e-6)/2 # -6.9
-        eps = np.log(1e-9)/2 # -6.9
+        eps = np.log(1e-6)/2 # -6.9
 
         # TODO: should the clamping be with or without autograd?
         log_std = log_std.clone()
@@ -294,13 +291,10 @@ def GaussianNLLLoss_custom(outputs, target):
     return torch.mean(cost1 + cost2)
 
 # %%
-VAL_AMP = True
-
 # Define the loss function
 loss_function = GaussianNLLLoss_custom
 optimizer = torch.optim.Adam(model.parameters(), 1e-4, weight_decay=1e-5)
 lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=max_epochs)
-
 mse_metric = MSEMetric(reduction="mean")
 
 epoch_loss_values = []
@@ -312,10 +306,7 @@ def inference(input):
         output = model(input)
         return output
 
-    if VAL_AMP:
-        with torch.amp.autocast('cuda'):
-            return _compute(input)
-    else:
+    with torch.amp.autocast('cuda'):
         return _compute(input)
 
 
@@ -327,10 +318,13 @@ torch.backends.cudnn.benchmark = True
 # %%
 ep_start = 1
 if CONTINUE_TRAINING:
-    model.load_state_dict(torch.load(os.path.join(save_dir, "best_metric_model.pth"), weights_only=True))
-    epoch_loss_values = np.load(os.path.join(save_dir, 'epoch_loss_values.npy')).tolist()
-    metric_values = np.load(os.path.join(save_dir, 'metric_values.npy')).tolist()
-    ep_start = 121
+    load_dir = save_dir
+    model.load_state_dict(torch.load(os.path.join(load_dir, "best_metric_model.pth"), weights_only=True))
+    with open(os.path.join(load_dir, 'training_data.pkl'), 'rb') as f:
+        training_data = pickle.load(f)
+        epoch_loss_values = training_data['epoch_loss_values']
+        metric_values = training_data['metric_values']
+        ep_start = training_data['epoch']
 
 # %%
 best_metric = -1
@@ -362,32 +356,22 @@ for epoch in range(ep_start, max_epochs+1):
             for name, param in model.named_parameters():
                 if param.grad is not None and torch.isnan(param.grad).any():
                     print(f"NaN found in gradient of parameter: {name}")
-                    pdb.set_trace()
-            outputs = model(inputs)
-
-            # outputs_main = outputs[:, :4, ...]
-            # log_std = outputs[:, 4:, ...]
-            # eps = np.log(1e-6)/2
-            # log_std[log_std < eps] = eps
-            # variance = torch.exp(2*log_std)
-            # if not SET_VARIANCE:
-            #     variance = torch.ones_like(variance) # sigma = 1
-            # loss = loss_function(outputs_main, target, variance)
-            
+                    exit()
+            outputs = model(inputs)            
             loss = loss_function(outputs, target)
 
             if np.isnan(loss.item()):
                 logger.warning("nan value encountered (1)!")
-                pdb.set_trace()
+                exit()
         scaler.scale(loss).backward()
         scaler.step(optimizer)
         scaler.update()
         if epoch > 10 and loss.item() > 1e5:
             logger.warning(f"large loss encountered: {loss.item()}!")
-            pdb.set_trace()
+            exit()
         if np.isnan(loss.item()):
             logger.warning("nan value encountered (2)!")
-            pdb.set_trace()
+            exit()
         epoch_loss += loss.item()
         logger.info(
             f"{step}/{len(train_loader)}"
@@ -441,8 +425,6 @@ for epoch in range(ep_start, max_epochs+1):
                     'epoch_loss_values': epoch_loss_values,
                     'metric_values': metric_values,
                 }, f)
-            # np.save(os.path.join(save_dir, 'epoch_loss_values.npy'), np.array(epoch_loss_values))
-            # np.save(os.path.join(save_dir, 'metric_values.npy'), np.array(metric_values))
             logger.info(
                 f"current epoch: {epoch} current mean mse: {metric:.4f}"
                 f" best mean metric: {best_metric:.4f}"
@@ -454,12 +436,5 @@ total_time = time.time() - total_start
 # %%
 logger.info(f"train completed, best_metric: {best_metric:.4f} at epoch: {best_metric_epoch}")
 logger.info(f"Training time: {total_time//max_epochs:.1f}s/ep (total: {total_time//3600:.0f}h {(total_time//60)%60:.0f}m)")
-
-# %%
-# Save the loss list
-np.save(os.path.join(save_dir, 'epoch_loss_values.npy'), np.array(epoch_loss_values))
-np.save(os.path.join(save_dir, 'metric_values.npy'), np.array(metric_values))
-del epoch_loss_values, metric_values
-logger.debug("training loss info saved")
 
 
