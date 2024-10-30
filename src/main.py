@@ -25,27 +25,35 @@ logger = Logger(log_level='DEBUG')
 # * TRAIN_RATIO: proportion of total dataset to be used for training. Rest will be used for validating
 
 # %%
-run_id = 2
-DO_MASK = False
-SET_VARIANCE = False
+run_id = 81
+DO_MASK = True
+SET_VARIANCE = True
+max_epochs = 600
+TRAIN_DATA_SIZE = 200
+BATCHSIZE_TRAIN = 2
 PIXEL_DOWNSAMPLE = [2, 2, 2]
-max_epochs = 100
 val_interval = 10
 TRAIN_RATIO = 0.8
-TRAIN_DATA_SIZE = 100
 RANDOM_SEED = 0
+CONTINUE_TRAINING = False
+TRAIN_DATA_SHUFFLE = True
 root_dir = "/scratch1/sachinsa/monai_data_1"
 
 logger.info("PARAMETERS\n-----------------")
-logger.info(f"run_id: {run_id}")
-logger.info(f"DO_MASK: {DO_MASK}")
-logger.info(f"SET_VARIANCE: {SET_VARIANCE}")
-logger.info(f"PIXEL_DOWNSAMPLE: {PIXEL_DOWNSAMPLE}")
-logger.info(f"max_epochs: {max_epochs}")
-logger.info(f"val_interval: {val_interval}")
-logger.info(f"TRAIN_RATIO: {TRAIN_RATIO}")
-logger.info(f"RANDOM_SEED: {RANDOM_SEED}")
-logger.info(f"Root dir: {root_dir}\n")
+logger.info("run_id: {run_id}")
+logger.info("DO_MASK: {DO_MASK}")
+logger.info("SET_VARIANCE: {SET_VARIANCE}")
+logger.info("max_epochs: {max_epochs}")
+logger.info("TRAIN_DATA_SIZE: {TRAIN_DATA_SIZE}")
+logger.info("BATCHSIZE_TRAIN: {BATCHSIZE_TRAIN}")
+logger.info("PIXEL_DOWNSAMPLE: {PIXEL_DOWNSAMPLE}")
+logger.info("val_interval: {val_interval}")
+logger.info("TRAIN_RATIO: {TRAIN_RATIO}")
+logger.info("RANDOM_SEED: {RANDOM_SEED}")
+logger.info("CONTINUE_TRAINING: {CONTINUE_TRAINING}")
+logger.info("TRAIN_DATA_SHUFFLE: {TRAIN_DATA_SHUFFLE}")
+logger.info(f"root_dir: {root_dir}")
+print("")
 
 # %% [markdown]
 # ## Check if this is a notebook or not
@@ -70,27 +78,19 @@ else:
     logger.debug("This is a Python script (not a Jupyter Notebook).")
 
 # %% [markdown]
-# ## Setup environment
-
-# %%
-# if is_notebook():
-#     get_ipython().system('python -c "import monai" || pip install -q "monai-weekly[nibabel, tqdm]"')
-#     get_ipython().system('python -c "import matplotlib" || pip install -q matplotlib')
-#     get_ipython().run_line_magic('matplotlib', 'inline')
-
-# %% [markdown]
 # ## Setup imports
 
 # %%
 import os
-import shutil
-import tempfile
+import numpy as np
+import pdb
 import time
 import matplotlib.pyplot as plt
+import json
+import pickle
+
 from monai.config import print_config
 from monai.transforms import (
-    Activations,
-    AsDiscrete,
     Compose,
 )
 from monai.networks.nets import UNet
@@ -110,32 +110,13 @@ from monai.transforms import (
 )
 from monai.metrics import MSEMetric
 from monai.utils import set_determinism
-from tqdm import tqdm
 
-import pdb
-import os
 import torch
-import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader, random_split
-import numpy as np
-import json
 
-print_config()
+from dataset import BrainMRIDataset
 
-# %% [markdown]
-# ## Setup data directory
-# 
-# You can specify a directory with the `MONAI_DATA_DIRECTORY` environment variable.  
-# This allows you to save results and reuse downloads.  
-# If not specified a temporary directory will be used.
-
-# %%
-os.environ["MONAI_DATA_DIRECTORY"] = root_dir
-directory = os.environ.get("MONAI_DATA_DIRECTORY")
-if directory is not None:
-    os.makedirs(directory, exist_ok=True)
-root_dir = tempfile.mkdtemp() if directory is None else directory
-logger.debug(f"Root dir: {root_dir}")
+# print_config()
 
 # %%
 save_dir = os.path.join(root_dir, f"run_{run_id}")
@@ -198,58 +179,7 @@ val_transform = Compose(
 )
 
 # %% [markdown]
-# ## Custom Dataset to load MRI and mask
-
-# %%
-def int_to_bool_binary(int_list, length):
-    # Convert each integer to its base-2 value and represent it as boolean, always ensuring length is 4
-    bool_list = []
-    
-    for num in int_list:
-        # Get the binary representation of the integer (excluding the '0b' prefix)
-        binary_str = bin(num)[2:]
-        # Convert each character in the binary string to a boolean
-        bools = [char == '1' for char in binary_str]
-        # Prepend False (0s) to make the length exactly 4
-        bools_padded = [False] * (length - len(bools)) + bools
-        bool_list.append(bools_padded)
-    
-    return np.array(bool_list)
-
-# %%
-class BrainMRIDataset(Dataset):
-    def __init__(self, root_dir, transform=None):
-        self.root_dir = os.path.join(root_dir, "Task01_BrainTumour")
-        json_file_path = os.path.join(self.root_dir, "dataset.json")
-        with open(json_file_path, 'r') as file:
-            data_json = json.load(file)
-
-        self.image_filenames = data_json['training']
-
-        np.random.seed(RANDOM_SEED)
-        num_seq = 4
-        if DO_MASK:
-            mask_drop_code = np.random.randint(0, 2**(num_seq) - 1, size=len(self.image_filenames))
-            self.seq_mask = int_to_bool_binary(mask_drop_code, length=num_seq)
-        else:
-            self.seq_mask = np.full((len(self.image_filenames), num_seq), False, dtype=bool)
-
-        self.transform = transform
-
-    def __len__(self):
-        """Returns the total number of samples in the dataset."""
-        return len(self.image_filenames)
-
-    def __getitem__(self, idx):
-        img_name = os.path.normpath(os.path.join(self.root_dir,self.image_filenames[idx]['image']))
-        mask = self.seq_mask[idx]
-        
-        if self.transform:
-            image = self.transform(img_name)
-
-        mask = torch.from_numpy(mask)
-
-        return {"image":image, "mask":mask}
+# ## Load data
 
 # %% [markdown]
 # Create training and validation dataset
@@ -258,7 +188,8 @@ class BrainMRIDataset(Dataset):
 from torch.utils.data import Subset
 
 all_dataset = BrainMRIDataset(
-    root_dir=root_dir
+    root_dir=root_dir,
+    seed = RANDOM_SEED
 )
 
 # Split the dataset
@@ -274,9 +205,10 @@ if TRAIN_DATA_SIZE:
 
 logger.debug("Data loading...")
 
+BATCHSIZE_VAL = BATCHSIZE_TRAIN
+
 # Create data loaders
-BATCHSIZE_TRAIN, BATCHSIZE_VAL = 2, 2
-train_loader = DataLoader(train_dataset, batch_size=BATCHSIZE_TRAIN, shuffle=True,
+train_loader = DataLoader(train_dataset, batch_size=BATCHSIZE_TRAIN, shuffle=TRAIN_DATA_SHUFFLE,
     num_workers=8)
 val_loader = DataLoader(val_dataset, batch_size=BATCHSIZE_VAL, shuffle=False, num_workers=8)
 
@@ -331,26 +263,33 @@ def count_parameters(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
 total_params = count_parameters(model)
-logger.debug(f"Total number of trainable parameters: {total_params}")
+# logger.debug(f"Total number of trainable parameters: {total_params}")
 
 # Print the model architecture
-logger.debug(f"Model Architecture:\n {model}")
+# logger.debug(f"Model Architecture:\n {model}")
 
 # %% [markdown]
 # ### Define Loss (Guassian Likelihood)
 
 # %%
-def GaussianLikelihood(expected_img, output_img):
-    # input is 4 channel images, output is 8 channel images
+def GaussianNLLLoss_custom(outputs, target):
+    # input is 4 channel images, outputs is 8 channel images
 
-    output_img_mean = output_img[:, :4, ...]
-    if SET_VARIANCE:
-        output_img_log_std = output_img[:, 4:, ...]
+    outputs_mean = outputs[:, :4, ...]
+    if not SET_VARIANCE:
+        log_std = torch.zeros_like(outputs_mean) # sigma = 1
     else:
-        output_img_log_std = torch.zeros_like(output_img[:, 4:, ...]) # sigma = 1
+        log_std = outputs[:, 4:, ...]
+        # eps = np.log(1e-6)/2 # -6.9
+        eps = np.log(1e-9)/2 # -6.9
 
-    cost1 = (expected_img - output_img_mean)**2 / (2*torch.exp(2*output_img_log_std))
-    cost2 = output_img_log_std
+        # TODO: should the clamping be with or without autograd?
+        log_std = log_std.clone()
+        with torch.no_grad():
+            log_std.clamp_(min=eps)
+
+    cost1 = (target - outputs_mean)**2 / (2*torch.exp(2*log_std))
+    cost2 = log_std
 
     return torch.mean(cost1 + cost2)
 
@@ -358,15 +297,14 @@ def GaussianLikelihood(expected_img, output_img):
 VAL_AMP = True
 
 # Define the loss function
-loss_function = GaussianLikelihood #nn.MSELoss()
+loss_function = GaussianNLLLoss_custom
 optimizer = torch.optim.Adam(model.parameters(), 1e-4, weight_decay=1e-5)
 lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=max_epochs)
 
 mse_metric = MSEMetric(reduction="mean")
-mse_metric_batch = MSEMetric(reduction="mean_batch")
 
-post_trans = Compose([Activations(sigmoid=True), AsDiscrete(threshold=0.5)])
-
+epoch_loss_values = []
+metric_values = []
 
 # define inference method
 def inference(input):
@@ -387,21 +325,23 @@ scaler = torch.amp.GradScaler('cuda')
 torch.backends.cudnn.benchmark = True
 
 # %%
+ep_start = 1
+if CONTINUE_TRAINING:
+    model.load_state_dict(torch.load(os.path.join(save_dir, "best_metric_model.pth"), weights_only=True))
+    epoch_loss_values = np.load(os.path.join(save_dir, 'epoch_loss_values.npy')).tolist()
+    metric_values = np.load(os.path.join(save_dir, 'metric_values.npy')).tolist()
+    ep_start = 121
+
+# %%
 best_metric = -1
 best_metric_epoch = -1
-best_metrics_epochs_and_time = [[], [], []]
-epoch_loss_values = []
-metric_values = []
-metric_values_tc = []
-metric_values_wt = []
-metric_values_et = []
 
 logger.debug("Beginning training...")
 total_start = time.time()
-for epoch in range(max_epochs):
-    epoch_start = time.time()
+for epoch in range(ep_start, max_epochs+1):
+    epoch_start_time = time.time()
     logger.info("-" * 10)
-    logger.info(f"epoch {epoch + 1}/{max_epochs}")
+    logger.info(f"epoch {epoch}/{max_epochs}")
     model.train()
     epoch_loss = 0
     step = 0
@@ -409,19 +349,45 @@ for epoch in range(max_epochs):
     for batch_data in train_loader:
         data_loaded_time = time.time() - step_start
         step += 1
-        inputs, mask = (
+        inputs, mask, id = (
             batch_data["image"].to(device),
             batch_data["mask"].to(device),
+            batch_data["id"],
         )
         optimizer.zero_grad()
         with torch.amp.autocast('cuda'):
-            outputs_gt = inputs.clone()
-            inputs = inputs*~mask[:,:,None,None,None]
+            target = inputs.clone()
+            if DO_MASK:
+                inputs = inputs*~mask[:,:,None,None,None]
+            for name, param in model.named_parameters():
+                if param.grad is not None and torch.isnan(param.grad).any():
+                    print(f"NaN found in gradient of parameter: {name}")
+                    pdb.set_trace()
             outputs = model(inputs)
-            loss = loss_function(outputs_gt, outputs)
+
+            # outputs_main = outputs[:, :4, ...]
+            # log_std = outputs[:, 4:, ...]
+            # eps = np.log(1e-6)/2
+            # log_std[log_std < eps] = eps
+            # variance = torch.exp(2*log_std)
+            # if not SET_VARIANCE:
+            #     variance = torch.ones_like(variance) # sigma = 1
+            # loss = loss_function(outputs_main, target, variance)
+            
+            loss = loss_function(outputs, target)
+
+            if np.isnan(loss.item()):
+                logger.warning("nan value encountered (1)!")
+                pdb.set_trace()
         scaler.scale(loss).backward()
         scaler.step(optimizer)
         scaler.update()
+        if epoch > 10 and loss.item() > 1e5:
+            logger.warning(f"large loss encountered: {loss.item()}!")
+            pdb.set_trace()
+        if np.isnan(loss.item()):
+            logger.warning("nan value encountered (2)!")
+            pdb.set_trace()
         epoch_loss += loss.item()
         logger.info(
             f"{step}/{len(train_loader)}"
@@ -433,9 +399,9 @@ for epoch in range(max_epochs):
     lr_scheduler.step()
     epoch_loss /= step
     epoch_loss_values.append(epoch_loss)
-    logger.info(f"epoch {epoch + 1} average loss: {epoch_loss:.4f}")
+    logger.info(f"epoch {epoch} average loss: {epoch_loss:.4f}")
 
-    if (epoch + 1) % val_interval == 0:
+    if epoch % val_interval == 0:
         model.eval()
         with torch.no_grad():
             for val_data in val_loader:
@@ -443,45 +409,51 @@ for epoch in range(max_epochs):
                     batch_data["image"].to(device),
                     batch_data["mask"].to(device),
                 )
-                val_outputs_gt = val_inputs.clone()
+                val_target = val_inputs.clone()
                 val_inputs = val_inputs*~val_mask[:,:,None,None,None]
                 val_outputs = inference(val_inputs)
-                val_outputs = val_outputs[:,:4,...]
-                # val_outputs = [post_trans(i) for i in val_outputs]
-                mse_metric(y_pred=val_outputs, y=val_outputs_gt)
-                mse_metric_batch(y_pred=val_outputs, y=val_outputs_gt)
+                val_output_main = val_outputs[:,:4,...]
+                mse_metric(y_pred=val_output_main, y=val_target)
 
             metric = 1-mse_metric.aggregate().item()
             metric_values.append(metric)
-            metric_batch = mse_metric_batch.aggregate()
             mse_metric.reset()
-            mse_metric_batch.reset()
+
+            torch.save(
+                    model.state_dict(),
+                    os.path.join(save_dir, "latest_model.pth"),
+                )
+            logger.info(f"saved latest model at epoch: {epoch}")
 
             if metric > best_metric:
                 best_metric = metric
-                best_metric_epoch = epoch + 1
-                best_metrics_epochs_and_time[0].append(best_metric)
-                best_metrics_epochs_and_time[1].append(best_metric_epoch)
-                best_metrics_epochs_and_time[2].append(time.time() - total_start)
+                best_metric_epoch = epoch
                 torch.save(
                     model.state_dict(),
                     os.path.join(save_dir, "best_metric_model.pth"),
                 )
-                logger.info("saved new best metric model")
+                logger.info(f"saved new best metric model at epoch: {epoch}")
                 
             # Save the loss list
-            np.save(os.path.join(save_dir, 'epoch_loss_values.npy'), np.array(epoch_loss_values))
-            np.save(os.path.join(save_dir, 'metric_values.npy'), np.array(metric_values))
+            with open(os.path.join(save_dir, 'training_data.pkl'), 'wb') as f:
+                pickle.dump({
+                    'epoch': epoch,
+                    'epoch_loss_values': epoch_loss_values,
+                    'metric_values': metric_values,
+                }, f)
+            # np.save(os.path.join(save_dir, 'epoch_loss_values.npy'), np.array(epoch_loss_values))
+            # np.save(os.path.join(save_dir, 'metric_values.npy'), np.array(metric_values))
             logger.info(
-                f"current epoch: {epoch + 1} current mean mse: {metric:.4f}"
-                f"\nbest mean metric: {best_metric:.4f}"
+                f"current epoch: {epoch} current mean mse: {metric:.4f}"
+                f" best mean metric: {best_metric:.4f}"
                 f" at epoch: {best_metric_epoch}"
             )
-    logger.info(f"time consuming of epoch {epoch + 1} is: {(time.time() - epoch_start):.4f}")
+    logger.info(f"time consuming of epoch {epoch} is: {(time.time() - epoch_start_time):.4f}")
 total_time = time.time() - total_start
 
 # %%
-logger.info(f"train completed, best_metric: {best_metric:.4f} at epoch: {best_metric_epoch}, total time: {total_time}.")
+logger.info(f"train completed, best_metric: {best_metric:.4f} at epoch: {best_metric_epoch}")
+logger.info(f"Training time: {total_time//max_epochs:.1f}s/ep (total: {total_time//3600:.0f}h {(total_time//60)%60:.0f}m)")
 
 # %%
 # Save the loss list
