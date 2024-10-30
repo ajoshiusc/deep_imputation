@@ -1,3 +1,25 @@
+TODO
+----
+SLURM_JOB_ID = 26800328
+run_id = 11
+DO_MASK = False
+SET_VARIANCE = False
+max_epochs = 500
+TRAIN_DATA_SIZE = 150
+BATCHSIZE_TRAIN = 2
+
+TODO
+----
+SLURM_JOB_ID = 26800314
+run_id = 81
+DO_MASK = True
+SET_VARIANCE = True
+max_epochs = 600
+TRAIN_DATA_SIZE = 200
+BATCHSIZE_TRAIN = 2
+
+
+
 COMPLETED
 ----
 SLURM_JOB_ID = 26756223
@@ -30,41 +52,3 @@ run_id = 40
 DO_MASK = True
 SET_VARIANCE = False
 max_epochs = 400
-
-COMPLETED
-----
-SLURM_JOB_ID = 
-run_id = 8
-DO_MASK = False
-SET_VARIANCE = True
-max_epochs = 400
-TRAIN_DATA_SIZE = 150
-
-COMPLETED
-----
-SLURM_JOB_ID = 26696123
-run_id = 4
-DO_MASK = True
-SET_VARIANCE = False
-max_epochs = 100
-
-COMPLETED
-----
-SLURM_JOB_ID = 26696213
-run_id = 3
-DO_MASK = False
-SET_VARIANCE = True
-max_epochs = 200
-
-COMPLETED
-----
-in notebook
-run_id = 2
-DO_MASK = False
-SET_VARIANCE = False
-PIXEL_DOWNSAMPLE = [2, 2, 2]
-max_epochs = 100
-val_interval = 10
-TRAIN_RATIO = 0.8
-TRAIN_DATA_SIZE = 100
-RANDOM_SEED = 0

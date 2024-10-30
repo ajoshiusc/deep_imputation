@@ -25,11 +25,11 @@ logger = Logger(log_level='DEBUG')
 # * TRAIN_RATIO: proportion of total dataset to be used for training. Rest will be used for validating
 
 # %%
-run_id = 81
+run_id = 82
 DO_MASK = True
 SET_VARIANCE = True
 max_epochs = 600
-TRAIN_DATA_SIZE = 200
+TRAIN_DATA_SIZE = 250
 BATCHSIZE_TRAIN = 2
 PIXEL_DOWNSAMPLE = [2, 2, 2]
 val_interval = 10
@@ -38,6 +38,14 @@ RANDOM_SEED = 0
 CONTINUE_TRAINING = False
 TRAIN_DATA_SHUFFLE = True
 root_dir = "/scratch1/sachinsa/monai_data_1"
+
+# test code sanity (for silly errors)
+SANITY_CHECK = False
+if SANITY_CHECK:
+    run_id = 0
+    max_epochs = 15
+    TRAIN_DATA_SIZE = 10
+    val_interval = 2
 
 logger.info("PARAMETERS\n-----------------")
 logger.info(f"run_id: {run_id}")
@@ -120,9 +128,9 @@ from dataset import BrainMRIDataset
 
 # %%
 save_dir = os.path.join(root_dir, f"run_{run_id}")
-if os.path.exists(save_dir) and os.path.isdir(save_dir) and len(os.listdir(save_dir)) != 0:
+if not CONTINUE_TRAINING and os.path.exists(save_dir) and os.path.isdir(save_dir) and len(os.listdir(save_dir)) != 0:
     logger.warning(f"{save_dir} already exists. Avoid overwrite by updating run_id.")
-    exit()
+    # exit()
 else:
     os.makedirs(save_dir, exist_ok=True)
 
@@ -266,13 +274,33 @@ total_params = count_parameters(model)
 # Print the model architecture
 # logger.debug(f"Model Architecture:\n {model}")
 
+# %%
+optimizer = torch.optim.Adam(model.parameters(), 1e-4, weight_decay=1e-5)
+lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=max_epochs)
+ep_start = 1
+
+epoch_loss_values = []
+metric_values = []
+
+if CONTINUE_TRAINING:
+    load_dir = save_dir
+    checkpoint = torch.load(os.path.join(load_dir, 'latest_checkpoint.pth'), weights_only=True)
+    model.load_state_dict(checkpoint['model_state_dict'])
+    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+    lr_scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+    ep_start = checkpoint['epoch']
+
+    with open(os.path.join(load_dir, 'training_data.pkl'), 'rb') as f:
+        training_data = pickle.load(f)
+        epoch_loss_values = training_data['epoch_loss_values']
+        metric_values = training_data['metric_values']
+
 # %% [markdown]
-# ### Define Loss (Guassian Likelihood)
+# ### Define Loss (Guassian Likelihood and MSE)
 
 # %%
-def GaussianNLLLoss_custom(outputs, target):
+def gaussian_nll_loss(outputs, target):
     # input is 4 channel images, outputs is 8 channel images
-
     outputs_mean = outputs[:, :4, ...]
     if not SET_VARIANCE:
         log_std = torch.zeros_like(outputs_mean) # sigma = 1
@@ -290,15 +318,17 @@ def GaussianNLLLoss_custom(outputs, target):
 
     return torch.mean(cost1 + cost2)
 
-# %%
-# Define the loss function
-loss_function = GaussianNLLLoss_custom
-optimizer = torch.optim.Adam(model.parameters(), 1e-4, weight_decay=1e-5)
-lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=max_epochs)
-mse_metric = MSEMetric(reduction="mean")
+def mse_loss(outputs, target):
+    return torch.nn.functional.mse_loss(outputs[:, :4, ...], target)
 
-epoch_loss_values = []
-metric_values = []
+def loss_scheduler(epoch):
+    if 500 < epoch < 600:
+        return mse_loss
+    else:
+        return gaussian_nll_loss
+
+# %%
+mse_metric = MSEMetric(reduction="mean")
 
 # define inference method
 def inference(input):
@@ -316,17 +346,6 @@ scaler = torch.amp.GradScaler('cuda')
 torch.backends.cudnn.benchmark = True
 
 # %%
-ep_start = 1
-if CONTINUE_TRAINING:
-    load_dir = save_dir
-    model.load_state_dict(torch.load(os.path.join(load_dir, "best_metric_model.pth"), weights_only=True))
-    with open(os.path.join(load_dir, 'training_data.pkl'), 'rb') as f:
-        training_data = pickle.load(f)
-        epoch_loss_values = training_data['epoch_loss_values']
-        metric_values = training_data['metric_values']
-        ep_start = training_data['epoch']
-
-# %%
 best_metric = -1
 best_metric_epoch = -1
 
@@ -339,6 +358,7 @@ for epoch in range(ep_start, max_epochs+1):
     model.train()
     epoch_loss = 0
     step = 0
+    criterion = loss_scheduler(epoch)
     step_start = time.time()
     for batch_data in train_loader:
         data_loaded_time = time.time() - step_start
@@ -358,11 +378,7 @@ for epoch in range(ep_start, max_epochs+1):
                     print(f"NaN found in gradient of parameter: {name}")
                     exit()
             outputs = model(inputs)            
-            loss = loss_function(outputs, target)
-
-            if np.isnan(loss.item()):
-                logger.warning("nan value encountered (1)!")
-                exit()
+            loss = criterion(outputs, target)
         scaler.scale(loss).backward()
         scaler.step(optimizer)
         scaler.update()
@@ -370,7 +386,7 @@ for epoch in range(ep_start, max_epochs+1):
             logger.warning(f"large loss encountered: {loss.item()}!")
             exit()
         if np.isnan(loss.item()):
-            logger.warning("nan value encountered (2)!")
+            logger.warning("nan value encountered!")
             exit()
         epoch_loss += loss.item()
         logger.info(
@@ -403,25 +419,30 @@ for epoch in range(ep_start, max_epochs+1):
             metric_values.append(metric)
             mse_metric.reset()
 
+            checkpoint = {
+                'epoch': epoch,
+                'model_state_dict': model.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'scheduler_state_dict': lr_scheduler.state_dict(),
+            }
             torch.save(
-                    model.state_dict(),
-                    os.path.join(save_dir, "latest_model.pth"),
-                )
+                checkpoint,
+                os.path.join(save_dir, 'latest_checkpoint.pth'),
+            )
             logger.info(f"saved latest model at epoch: {epoch}")
 
             if metric > best_metric:
                 best_metric = metric
                 best_metric_epoch = epoch
                 torch.save(
-                    model.state_dict(),
-                    os.path.join(save_dir, "best_metric_model.pth"),
+                    checkpoint,
+                    os.path.join(save_dir, 'best_checkpoint.pth'),
                 )
                 logger.info(f"saved new best metric model at epoch: {epoch}")
                 
             # Save the loss list
             with open(os.path.join(save_dir, 'training_data.pkl'), 'wb') as f:
                 pickle.dump({
-                    'epoch': epoch,
                     'epoch_loss_values': epoch_loss_values,
                     'metric_values': metric_values,
                 }, f)
