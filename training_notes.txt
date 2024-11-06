@@ -1,5 +1,15 @@
 TODO
 ----
+SLURM_JOB_ID = 26815400
+run_id = 82
+Loss-scheduler added
+DO_MASK = True
+SET_VARIANCE = True
+max_epochs = 600
+TRAIN_DATA_SIZE = 250
+
+COMPLETED
+----
 SLURM_JOB_ID = 26800328
 run_id = 11
 DO_MASK = False
@@ -8,7 +18,7 @@ max_epochs = 500
 TRAIN_DATA_SIZE = 150
 BATCHSIZE_TRAIN = 2
 
-TODO
+COMPLETED
 ----
 SLURM_JOB_ID = 26800314
 run_id = 81

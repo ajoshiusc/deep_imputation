@@ -209,7 +209,7 @@ val_dataset.dataset.transform = val_transform
 
 if TRAIN_DATA_SIZE:
     train_dataset = Subset(train_dataset, list(range(TRAIN_DATA_SIZE)))
-    val_dataset = Subset(train_dataset, list(range(TRAIN_DATA_SIZE//4)))
+    val_dataset = Subset(val_dataset, list(range(TRAIN_DATA_SIZE//4)))
 
 BATCHSIZE_VAL = BATCHSIZE_TRAIN
 
