@@ -11,6 +11,20 @@
 from logger import Logger
 logger = Logger(log_level='DEBUG')
 
+
+def qr_loss(y, x, q0=0.5, q1=0.841,q2=0.159):
+    y0 = outputs[:, :4, ...]
+    y1 = y[:,4:8,...]
+    y2 = y[:,8:,...]
+    custom_loss0 = torch.sum(torch.max(q0 * (y0 - x), (q0 - 1.0) * (y0 - x)))
+    custom_loss1 = torch.sum(torch.max(q1 * (y1 - x), (q1 - 1.0) * (y1 - x)))
+    custom_loss2 = torch.sum(torch.max(q2 * (y2 - x), (q2 - 1.0) * (y2 - x)))
+
+    #   torch.sum(torch.max(Q * (recon_x - x), (Q - 1) * (recon_x - x)))
+    return custom_loss0 + custom_loss1 + custom_loss2
+
+
+
 # %% [markdown]
 # ### Set parameters
 # 
@@ -25,27 +39,19 @@ logger = Logger(log_level='DEBUG')
 # * TRAIN_RATIO: proportion of total dataset to be used for training. Rest will be used for validating
 
 # %%
-run_id = 82
+run_id = 23 # with 17, it was set variance False
 DO_MASK = True
 SET_VARIANCE = True
-max_epochs = 600
-TRAIN_DATA_SIZE = 250
+max_epochs = 30000
+TRAIN_DATA_SIZE = 8
 BATCHSIZE_TRAIN = 2
-PIXEL_DOWNSAMPLE = [2, 2, 2]
+PIXEL_DOWNSAMPLE = [1, 1, 1]
 val_interval = 10
 TRAIN_RATIO = 0.8
 RANDOM_SEED = 0
 CONTINUE_TRAINING = False
-TRAIN_DATA_SHUFFLE = True
-root_dir = "/scratch1/sachinsa/monai_data_1"
-
-# test code sanity (for silly errors)
-SANITY_CHECK = False
-if SANITY_CHECK:
-    run_id = 0
-    max_epochs = 15
-    TRAIN_DATA_SIZE = 10
-    val_interval = 2
+TRAIN_DATA_SHUFFLE = False
+root_dir = "/scratch1/ajoshi/monai_data_1"
 
 logger.info("PARAMETERS\n-----------------")
 logger.info(f"run_id: {run_id}")
@@ -128,9 +134,9 @@ from dataset import BrainMRIDataset
 
 # %%
 save_dir = os.path.join(root_dir, f"run_{run_id}")
-if not CONTINUE_TRAINING and os.path.exists(save_dir) and os.path.isdir(save_dir) and len(os.listdir(save_dir)) != 0:
+if os.path.exists(save_dir) and os.path.isdir(save_dir) and len(os.listdir(save_dir)) != 0:
     logger.warning(f"{save_dir} already exists. Avoid overwrite by updating run_id.")
-    # exit()
+    exit()
 else:
     os.makedirs(save_dir, exist_ok=True)
 
@@ -145,8 +151,8 @@ set_determinism(seed=RANDOM_SEED)
 # 
 
 # %%
-crop_size = [224, 224, 144]
-resize_size = [crop_size[i]//PIXEL_DOWNSAMPLE[i] for i in range(len(crop_size))]
+crop_size = [64,64,64] # [224, 224, 144]
+resize_size = [64,64,64] #[crop_size[i]//PIXEL_DOWNSAMPLE[i] for i in range(len(crop_size))]
 
 train_transform = Compose(
     [
@@ -155,18 +161,18 @@ train_transform = Compose(
         EnsureChannelFirst(),
         EnsureType(),
         Orientation(axcodes="RAS"),
-        Spacing(
-            pixdim=(1.0, 1.0, 1.0),
-            mode=("bilinear", "nearest"),
-        ),
-        RandSpatialCrop(roi_size=crop_size, random_size=False),
-        Resize(spatial_size=resize_size, mode='nearest'),
-        RandFlip(prob=0.5, spatial_axis=0),
-        RandFlip(prob=0.5, spatial_axis=1),
-        RandFlip(prob=0.5, spatial_axis=2),
-        NormalizeIntensity(nonzero=True, channel_wise=True),
-        RandScaleIntensity(factors=0.1, prob=1.0),
-        RandShiftIntensity(offsets=0.1, prob=1.0),
+        #Spacing(
+        #    pixdim=(2.0, 2.0, 2.0),
+        #    mode=("bilinear", "nearest"),
+        #),
+        Resize(spatial_size=resize_size, mode="nearest"),
+        #RandSpatialCrop(roi_size=crop_size, random_size=False),
+        #RandFlip(prob=0.5, spatial_axis=0),
+        #RandFlip(prob=0.5, spatial_axis=1),
+        #RandFlip(prob=0.5, spatial_axis=2),
+        NormalizeIntensity(),#nonzero=True, channel_wise=True),
+        #RandScaleIntensity(factors=0.1, prob=1.0),
+        #RandShiftIntensity(offsets=0.1, prob=1.0),
     ]
 )
 
@@ -176,13 +182,14 @@ val_transform = Compose(
         EnsureChannelFirst(),
         EnsureType(),
         Orientation(axcodes="RAS"),
-        Spacing(
-            pixdim=(1.0, 1.0, 1.0),
-            mode=("bilinear", "nearest"),
-        ),
-        CenterSpatialCrop(roi_size=crop_size), # added this because model was not handling 155dims
-        Resize(spatial_size=resize_size, mode='nearest'),
-        NormalizeIntensity(nonzero=True, channel_wise=True),
+        #Spacing(
+        #    pixdim=(2.0, 2.0, 2.0),
+        #    mode=("bilinear", "nearest"),
+        #),
+        Resize(spatial_size=resize_size, mode="nearest"),
+        #CenterSpatialCrop(roi_size=crop_size), # added this because model was not handling 155dims
+        #Resize(spatial_size=resize_size, mode='nearest'),
+        NormalizeIntensity(),#nonzero=True, channel_wise=True),
     ]
 )
 
@@ -209,8 +216,9 @@ val_dataset.dataset.transform = val_transform
 
 if TRAIN_DATA_SIZE:
     train_dataset = Subset(train_dataset, list(range(TRAIN_DATA_SIZE)))
-    val_dataset = Subset(val_dataset, list(range(TRAIN_DATA_SIZE//4)))
+    val_dataset = Subset(train_dataset, list(range(TRAIN_DATA_SIZE//4)))
 
+#train_data = CacheDataset(train_dataset)
 BATCHSIZE_VAL = BATCHSIZE_TRAIN
 
 # Create data loaders
@@ -240,7 +248,7 @@ if is_notebook():
         brain_slice = val_data_example[i, :, :, im_height//2].detach().cpu().T
         plt.xticks([0, im_width - 1], [0, im_width - 1], fontsize=15)
         plt.yticks([0, im_length - 1], [0, im_length - 1], fontsize=15)
-        plt.imshow(brain_slice, cmap="gray")
+        plt.imshow(brain_slice, cmap="gray", vmax=1.0,vmin=-1.0)
         cbar = plt.colorbar()
         cbar.ax.tick_params(labelsize=20)
     plt.show()
@@ -252,11 +260,11 @@ if is_notebook():
 # **Define a 3D Unet**
 
 # %%
-device = torch.device("cuda:0")
+device = torch.device("cuda")
 model = UNet(
     spatial_dims=3, # 3D
     in_channels=4,
-    out_channels=8, # we will output estimated mean and estimated std dev for all 4 image channels
+    out_channels=12, # we will output estimated mean and estimated std dev for all 4 image channels
     channels=(4, 8, 16),
     strides=(2, 2),
     num_res_units=2
@@ -274,33 +282,14 @@ total_params = count_parameters(model)
 # Print the model architecture
 # logger.debug(f"Model Architecture:\n {model}")
 
-# %%
-optimizer = torch.optim.Adam(model.parameters(), 1e-4, weight_decay=1e-5)
-lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=max_epochs)
-ep_start = 1
-
-epoch_loss_values = []
-metric_values = []
-
-if CONTINUE_TRAINING:
-    load_dir = save_dir
-    checkpoint = torch.load(os.path.join(load_dir, 'latest_checkpoint.pth'), weights_only=True)
-    model.load_state_dict(checkpoint['model_state_dict'])
-    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-    lr_scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
-    ep_start = checkpoint['epoch']
-
-    with open(os.path.join(load_dir, 'training_data.pkl'), 'rb') as f:
-        training_data = pickle.load(f)
-        epoch_loss_values = training_data['epoch_loss_values']
-        metric_values = training_data['metric_values']
-
 # %% [markdown]
-# ### Define Loss (Guassian Likelihood and MSE)
+# ### Define Loss (Guassian Likelihood)
 
 # %%
-def gaussian_nll_loss(outputs, target):
+
+def GaussianNLLLoss_custom(outputs, target):
     # input is 4 channel images, outputs is 8 channel images
+
     outputs_mean = outputs[:, :4, ...]
     if not SET_VARIANCE:
         log_std = torch.zeros_like(outputs_mean) # sigma = 1
@@ -309,26 +298,24 @@ def gaussian_nll_loss(outputs, target):
         eps = np.log(1e-6)/2 # -6.9
 
         # TODO: should the clamping be with or without autograd?
-        log_std = log_std.clone()
-        with torch.no_grad():
-            log_std.clamp_(min=eps)
+        #log_std = log_std.clone()
+        #with torch.no_grad():
+        #    log_std.clamp_(min=eps)
 
-    cost1 = (target - outputs_mean)**2 / (2*torch.exp(2*log_std))
+    cost1 = ((target - outputs_mean)**2.) / (2.*torch.exp(2.*log_std))
     cost2 = log_std
 
     return torch.mean(cost1 + cost2)
 
-def mse_loss(outputs, target):
-    return torch.nn.functional.mse_loss(outputs[:, :4, ...], target)
-
-def loss_scheduler(epoch):
-    if 500 < epoch < 600:
-        return mse_loss
-    else:
-        return gaussian_nll_loss
-
 # %%
+# Define the loss function
+loss_function = qr_loss #GaussianNLLLoss_custom
+optimizer = torch.optim.Adam(model.parameters(), 1e-4, weight_decay=1e-5)
+lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=max_epochs)
 mse_metric = MSEMetric(reduction="mean")
+
+epoch_loss_values = []
+metric_values = []
 
 # define inference method
 def inference(input):
@@ -346,6 +333,17 @@ scaler = torch.amp.GradScaler('cuda')
 torch.backends.cudnn.benchmark = True
 
 # %%
+ep_start = 1
+if CONTINUE_TRAINING:
+    load_dir = save_dir
+    model.load_state_dict(torch.load(os.path.join(load_dir, "best_metric_model.pth"), weights_only=True))
+    with open(os.path.join(load_dir, 'training_data.pkl'), 'rb') as f:
+        training_data = pickle.load(f)
+        epoch_loss_values = training_data['epoch_loss_values']
+        metric_values = training_data['metric_values']
+        ep_start = training_data['epoch']
+
+# %%
 best_metric = -1
 best_metric_epoch = -1
 
@@ -358,7 +356,6 @@ for epoch in range(ep_start, max_epochs+1):
     model.train()
     epoch_loss = 0
     step = 0
-    criterion = loss_scheduler(epoch)
     step_start = time.time()
     for batch_data in train_loader:
         data_loaded_time = time.time() - step_start
@@ -372,13 +369,27 @@ for epoch in range(ep_start, max_epochs+1):
         with torch.amp.autocast('cuda'):
             target = inputs.clone()
             if DO_MASK:
-                inputs = inputs*~mask[:,:,None,None,None]
+                inputs = inputs*~mask[:,:,None,None,None] - 1.0*mask[:,:,None,None,None]
+                num_masked = torch.sum(mask,axis=1)
+                
             for name, param in model.named_parameters():
                 if param.grad is not None and torch.isnan(param.grad).any():
                     print(f"NaN found in gradient of parameter: {name}")
                     exit()
-            outputs = model(inputs)            
-            loss = criterion(outputs, target)
+            outputs = model(inputs)
+ 
+            out_mask = torch.concatenate([mask[:,:,None,None,None],mask[:,:,None,None,None],mask[:,:,None,None,None]], axis=1)
+            print(out_mask.shape)
+            print(outputs.shape)
+            print(target.shape)
+            print(out_mask.shape)
+
+            loss = loss_function(outputs, target)#loss_function(outputs*out_mask, target*mask[:,:,None,None,None])
+            #loss = loss * torch.sum(num_masked)
+
+            if np.isnan(loss.item()):
+                logger.warning("nan value encountered (1)!")
+                exit()
         scaler.scale(loss).backward()
         scaler.step(optimizer)
         scaler.update()
@@ -386,7 +397,7 @@ for epoch in range(ep_start, max_epochs+1):
             logger.warning(f"large loss encountered: {loss.item()}!")
             exit()
         if np.isnan(loss.item()):
-            logger.warning("nan value encountered!")
+            logger.warning("nan value encountered (2)!")
             exit()
         epoch_loss += loss.item()
         logger.info(
@@ -419,30 +430,25 @@ for epoch in range(ep_start, max_epochs+1):
             metric_values.append(metric)
             mse_metric.reset()
 
-            checkpoint = {
-                'epoch': epoch,
-                'model_state_dict': model.state_dict(),
-                'optimizer_state_dict': optimizer.state_dict(),
-                'scheduler_state_dict': lr_scheduler.state_dict(),
-            }
             torch.save(
-                checkpoint,
-                os.path.join(save_dir, 'latest_checkpoint.pth'),
-            )
+                    model.state_dict(),
+                    os.path.join(save_dir, "latest_model.pth"),
+                )
             logger.info(f"saved latest model at epoch: {epoch}")
 
             if metric > best_metric:
                 best_metric = metric
                 best_metric_epoch = epoch
                 torch.save(
-                    checkpoint,
-                    os.path.join(save_dir, 'best_checkpoint.pth'),
+                    model.state_dict(),
+                    os.path.join(save_dir, "best_metric_model.pth"),
                 )
                 logger.info(f"saved new best metric model at epoch: {epoch}")
                 
             # Save the loss list
             with open(os.path.join(save_dir, 'training_data.pkl'), 'wb') as f:
                 pickle.dump({
+                    'epoch': epoch,
                     'epoch_loss_values': epoch_loss_values,
                     'metric_values': metric_values,
                 }, f)
@@ -457,5 +463,8 @@ total_time = time.time() - total_start
 # %%
 logger.info(f"train completed, best_metric: {best_metric:.4f} at epoch: {best_metric_epoch}")
 logger.info(f"Training time: {total_time//max_epochs:.1f}s/ep (total: {total_time//3600:.0f}h {(total_time//60)%60:.0f}m)")
+
+# %%
+
 
 

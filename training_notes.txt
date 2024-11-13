@@ -1,4 +1,14 @@
-TODO
+COMPLETED
+----
+SLURM_JOB_ID = 
+run_id = 0
+QR_REGRESSION = True
+DO_MASK = True
+SET_VARIANCE = True
+max_epochs = 600
+TRAIN_DATA_SIZE = 250
+
+COMPLETED
 ----
 SLURM_JOB_ID = 26815400
 run_id = 82
