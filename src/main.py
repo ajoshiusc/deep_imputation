@@ -11,62 +11,67 @@
 from logger import Logger
 logger = Logger(log_level='DEBUG')
 
-
-def qr_loss(y, x, q0=0.5, q1=0.841,q2=0.159):
-    y0 = outputs[:, :4, ...]
-    y1 = y[:,4:8,...]
-    y2 = y[:,8:,...]
-    custom_loss0 = torch.sum(torch.max(q0 * (y0 - x), (q0 - 1.0) * (y0 - x)))
-    custom_loss1 = torch.sum(torch.max(q1 * (y1 - x), (q1 - 1.0) * (y1 - x)))
-    custom_loss2 = torch.sum(torch.max(q2 * (y2 - x), (q2 - 1.0) * (y2 - x)))
-
-    #   torch.sum(torch.max(Q * (recon_x - x), (Q - 1) * (recon_x - x)))
-    return custom_loss0 + custom_loss1 + custom_loss2
-
-
-
 # %% [markdown]
 # ### Set parameters
 # 
-# * run_id : set this to prevent overlapped saving of model and data
+# * RUN_ID : set this to prevent overlapped saving of model and data
 # 
 # * DO_MASK : Set to True if mask is to be applied while training
 # * SET_VARIANCE : Set to True if variance is to be trained in loss function
 # * PIXEL_DOWNSAMPLE : How much to scale down each axis. In other words, mm per pixel/voxel
 # 
-# * max_epochs
-# * val_interval : how frequently the validation code should be run
+# * MAX_EPOCHS
+# * VAL_INTERVAL : how frequently the validation code should be run
 # * TRAIN_RATIO: proportion of total dataset to be used for training. Rest will be used for validating
 
 # %%
-run_id = 23 # with 17, it was set variance False
+RUN_ID = 20
+QR_REGRESSION = True
 DO_MASK = True
 SET_VARIANCE = True
-max_epochs = 30000
-TRAIN_DATA_SIZE = 8
+MAX_EPOCHS = 6000
+TRAIN_DATA_SIZE = 50
 BATCHSIZE_TRAIN = 2
-PIXEL_DOWNSAMPLE = [1, 1, 1]
-val_interval = 10
+# PIXEL_DOWNSAMPLE = [2, 2, 2]
+VAL_INTERVAL = 10
 TRAIN_RATIO = 0.8
 RANDOM_SEED = 0
 CONTINUE_TRAINING = False
-TRAIN_DATA_SHUFFLE = False
-root_dir = "/scratch1/ajoshi/monai_data_1"
+TRAIN_DATA_SHUFFLE = True
+ROOT_DIR = "/scratch1/sachinsa/monai_data_1"
+
+# test code sanity (for silly errors)
+SANITY_CHECK = False
+if SANITY_CHECK:
+    RUN_ID = 0
+    MAX_EPOCHS = 15
+    TRAIN_DATA_SIZE = 10
+    VAL_INTERVAL = 2
+
+params = {
+    'RUN_ID': RUN_ID,
+    'QR_REGRESSION': QR_REGRESSION,
+    'DO_MASK': DO_MASK,
+    'SET_VARIANCE': SET_VARIANCE,
+    'MAX_EPOCHS': MAX_EPOCHS,
+    'ROOT_DIR': ROOT_DIR
+}
 
 logger.info("PARAMETERS\n-----------------")
-logger.info(f"run_id: {run_id}")
+logger.info(f"RUN_ID: {RUN_ID}")
+logger.info(f"QR_REGRESSION: {QR_REGRESSION}")
 logger.info(f"DO_MASK: {DO_MASK}")
 logger.info(f"SET_VARIANCE: {SET_VARIANCE}")
-logger.info(f"max_epochs: {max_epochs}")
+logger.info(f"MAX_EPOCHS: {MAX_EPOCHS}")
 logger.info(f"TRAIN_DATA_SIZE: {TRAIN_DATA_SIZE}")
 logger.info(f"BATCHSIZE_TRAIN: {BATCHSIZE_TRAIN}")
-logger.info(f"PIXEL_DOWNSAMPLE: {PIXEL_DOWNSAMPLE}")
-logger.info(f"val_interval: {val_interval}")
+# logger.info(f"PIXEL_DOWNSAMPLE: {PIXEL_DOWNSAMPLE}")
+logger.info(f"VAL_INTERVAL: {VAL_INTERVAL}")
 logger.info(f"TRAIN_RATIO: {TRAIN_RATIO}")
 logger.info(f"RANDOM_SEED: {RANDOM_SEED}")
 logger.info(f"CONTINUE_TRAINING: {CONTINUE_TRAINING}")
 logger.info(f"TRAIN_DATA_SHUFFLE: {TRAIN_DATA_SHUFFLE}")
-logger.info(f"root_dir: {root_dir}")
+logger.info(f"ROOT_DIR: {ROOT_DIR}")
 print("")
 
 # %% [markdown]
@@ -133,10 +138,10 @@ from dataset import BrainMRIDataset
 # print_config()
 
 # %%
-save_dir = os.path.join(root_dir, f"run_{run_id}")
-if os.path.exists(save_dir) and os.path.isdir(save_dir) and len(os.listdir(save_dir)) != 0:
-    logger.warning(f"{save_dir} already exists. Avoid overwrite by updating run_id.")
-    exit()
+save_dir = os.path.join(ROOT_DIR, f"run_{RUN_ID}")
+if not CONTINUE_TRAINING and os.path.exists(save_dir) and os.path.isdir(save_dir) and len(os.listdir(save_dir)) != 0:
+    logger.warning(f"{save_dir} already exists. Avoid overwrite by updating RUN_ID.")
+    # exit()
 else:
     os.makedirs(save_dir, exist_ok=True)
 
@@ -151,8 +156,9 @@ set_determinism(seed=RANDOM_SEED)
 # 
 
 # %%
-crop_size = [64,64,64] # [224, 224, 144]
-resize_size = [64,64,64] #[crop_size[i]//PIXEL_DOWNSAMPLE[i] for i in range(len(crop_size))]
+# crop_size = [224, 224, 144]
+# resize_size = [crop_size[i]//PIXEL_DOWNSAMPLE[i] for i in range(len(crop_size))]
+resize_size = [64,64,64]
 
 train_transform = Compose(
     [
@@ -161,18 +167,18 @@ train_transform = Compose(
         EnsureChannelFirst(),
         EnsureType(),
         Orientation(axcodes="RAS"),
-        #Spacing(
-        #    pixdim=(2.0, 2.0, 2.0),
-        #    mode=("bilinear", "nearest"),
-        #),
-        Resize(spatial_size=resize_size, mode="nearest"),
-        #RandSpatialCrop(roi_size=crop_size, random_size=False),
-        #RandFlip(prob=0.5, spatial_axis=0),
-        #RandFlip(prob=0.5, spatial_axis=1),
-        #RandFlip(prob=0.5, spatial_axis=2),
-        NormalizeIntensity(),#nonzero=True, channel_wise=True),
-        #RandScaleIntensity(factors=0.1, prob=1.0),
-        #RandShiftIntensity(offsets=0.1, prob=1.0),
+        # Spacing(
+        #     pixdim=(1.0, 1.0, 1.0),
+        #     mode=("bilinear", "nearest"),
+        # ),
+        # RandSpatialCrop(roi_size=crop_size, random_size=False),
+        Resize(spatial_size=resize_size, mode='nearest'),
+        # RandFlip(prob=0.5, spatial_axis=0),
+        # RandFlip(prob=0.5, spatial_axis=1),
+        # RandFlip(prob=0.5, spatial_axis=2),
+        NormalizeIntensity(nonzero=True, channel_wise=True),
+        # RandScaleIntensity(factors=0.1, prob=1.0),
+        # RandShiftIntensity(offsets=0.1, prob=1.0),
     ]
 )
 
@@ -182,14 +188,13 @@ val_transform = Compose(
         EnsureChannelFirst(),
         EnsureType(),
         Orientation(axcodes="RAS"),
-        #Spacing(
-        #    pixdim=(2.0, 2.0, 2.0),
-        #    mode=("bilinear", "nearest"),
-        #),
-        Resize(spatial_size=resize_size, mode="nearest"),
-        #CenterSpatialCrop(roi_size=crop_size), # added this because model was not handling 155dims
-        #Resize(spatial_size=resize_size, mode='nearest'),
-        NormalizeIntensity(),#nonzero=True, channel_wise=True),
+        # Spacing(
+        #     pixdim=(1.0, 1.0, 1.0),
+        #     mode=("bilinear", "nearest"),
+        # ),
+        # CenterSpatialCrop(roi_size=crop_size), # added this because model was not handling 155dims
+        Resize(spatial_size=resize_size, mode='nearest'),
+        NormalizeIntensity(nonzero=True, channel_wise=True),
     ]
 )
 
@@ -203,7 +208,7 @@ val_transform = Compose(
 from torch.utils.data import Subset
 
 all_dataset = BrainMRIDataset(
-    root_dir=root_dir,
+    root_dir=ROOT_DIR,
     seed = RANDOM_SEED
 )
 
@@ -216,9 +221,8 @@ val_dataset.dataset.transform = val_transform
 
 if TRAIN_DATA_SIZE:
     train_dataset = Subset(train_dataset, list(range(TRAIN_DATA_SIZE)))
-    val_dataset = Subset(train_dataset, list(range(TRAIN_DATA_SIZE//4)))
+    val_dataset = Subset(val_dataset, list(range(TRAIN_DATA_SIZE//4)))
 
-#train_data = CacheDataset(train_dataset)
 BATCHSIZE_VAL = BATCHSIZE_TRAIN
 
 # Create data loaders
@@ -248,7 +252,7 @@ if is_notebook():
         brain_slice = val_data_example[i, :, :, im_height//2].detach().cpu().T
         plt.xticks([0, im_width - 1], [0, im_width - 1], fontsize=15)
         plt.yticks([0, im_length - 1], [0, im_length - 1], fontsize=15)
-        plt.imshow(brain_slice, cmap="gray", vmax=1.0,vmin=-1.0)
+        plt.imshow(brain_slice, cmap="gray")
         cbar = plt.colorbar()
         cbar.ax.tick_params(labelsize=20)
     plt.show()
@@ -260,11 +264,12 @@ if is_notebook():
 # **Define a 3D Unet**
 
 # %%
-device = torch.device("cuda")
+device = torch.device("cuda:0")
+out_channels = 12 if QR_REGRESSION else 8
 model = UNet(
     spatial_dims=3, # 3D
     in_channels=4,
-    out_channels=12, # we will output estimated mean and estimated std dev for all 4 image channels
+    out_channels=out_channels,
     channels=(4, 8, 16),
     strides=(2, 2),
     num_res_units=2
@@ -282,14 +287,33 @@ total_params = count_parameters(model)
 # Print the model architecture
 # logger.debug(f"Model Architecture:\n {model}")
 
+# %%
+optimizer = torch.optim.Adam(model.parameters(), 1e-4, weight_decay=1e-5)
+lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=MAX_EPOCHS)
+ep_start = 1
+
+epoch_loss_values = []
+metric_values = []
+
+if CONTINUE_TRAINING:
+    load_dir = save_dir
+    checkpoint = torch.load(os.path.join(load_dir, 'latest_checkpoint.pth'), weights_only=True)
+    model.load_state_dict(checkpoint['model_state_dict'])
+    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+    lr_scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+    ep_start = checkpoint['epoch']
+
+    with open(os.path.join(load_dir, 'training_info.pkl'), 'rb') as f:
+        training_info = pickle.load(f)
+        epoch_loss_values = training_info['epoch_loss_values']
+        metric_values = training_info['metric_values']
+
 # %% [markdown]
-# ### Define Loss (Guassian Likelihood)
+# ### Define Losses
 
 # %%
-
-def GaussianNLLLoss_custom(outputs, target):
+def gaussian_nll_loss(outputs, target):
     # input is 4 channel images, outputs is 8 channel images
-
     outputs_mean = outputs[:, :4, ...]
     if not SET_VARIANCE:
         log_std = torch.zeros_like(outputs_mean) # sigma = 1
@@ -298,24 +322,39 @@ def GaussianNLLLoss_custom(outputs, target):
         eps = np.log(1e-6)/2 # -6.9
 
         # TODO: should the clamping be with or without autograd?
-        #log_std = log_std.clone()
-        #with torch.no_grad():
-        #    log_std.clamp_(min=eps)
+        log_std = log_std.clone()
+        with torch.no_grad():
+            log_std.clamp_(min=eps)
 
-    cost1 = ((target - outputs_mean)**2.) / (2.*torch.exp(2.*log_std))
+    cost1 = (target - outputs_mean)**2 / (2*torch.exp(2*log_std))
     cost2 = log_std
 
     return torch.mean(cost1 + cost2)
 
-# %%
-# Define the loss function
-loss_function = qr_loss #GaussianNLLLoss_custom
-optimizer = torch.optim.Adam(model.parameters(), 1e-4, weight_decay=1e-5)
-lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=max_epochs)
-mse_metric = MSEMetric(reduction="mean")
+def mse_loss(outputs, target):
+    return torch.nn.functional.mse_loss(outputs[:, :4, ...], target)
 
-epoch_loss_values = []
-metric_values = []
+def qr_loss(out, tgt, q0=0.5, q1=0.841, q2=0.159):
+    out0 = out[:, :4, ...]
+    out1 = out[:, 4:8, ...]
+    out2 = out[:, 8:, ...]
+    custom_loss0 = torch.sum(torch.max(q0 * (out0 - tgt), (q0 - 1.0) * (out0 - tgt)))
+    custom_loss1 = torch.sum(torch.max(q1 * (out1 - tgt), (q1 - 1.0) * (out1 - tgt)))
+    custom_loss2 = torch.sum(torch.max(q2 * (out2 - tgt), (q2 - 1.0) * (out2 - tgt)))
+
+    return custom_loss0 + custom_loss1 + custom_loss2
+
+def loss_scheduler(epoch):
+    if QR_REGRESSION:
+        return qr_loss
+    else:
+        if 500 < epoch < 600:
+            return mse_loss
+        else:
+            return gaussian_nll_loss
+
+# %%
+mse_metric = MSEMetric(reduction="mean")
 
 # define inference method
 def inference(input):
@@ -333,15 +372,9 @@ scaler = torch.amp.GradScaler('cuda')
 torch.backends.cudnn.benchmark = True
 
 # %%
-ep_start = 1
-if CONTINUE_TRAINING:
-    load_dir = save_dir
-    model.load_state_dict(torch.load(os.path.join(load_dir, "best_metric_model.pth"), weights_only=True))
-    with open(os.path.join(load_dir, 'training_data.pkl'), 'rb') as f:
-        training_data = pickle.load(f)
-        epoch_loss_values = training_data['epoch_loss_values']
-        metric_values = training_data['metric_values']
-        ep_start = training_data['epoch']
+# Save params
+with open(os.path.join(save_dir, 'params.pkl'), 'wb') as f:
+    pickle.dump(params, f)
 
 # %%
 best_metric = -1
@@ -349,13 +382,14 @@ best_metric_epoch = -1
 
 logger.debug("Beginning training...")
 total_start = time.time()
-for epoch in range(ep_start, max_epochs+1):
+for epoch in range(ep_start, MAX_EPOCHS+1):
     epoch_start_time = time.time()
     logger.info("-" * 10)
-    logger.info(f"epoch {epoch}/{max_epochs}")
+    logger.info(f"epoch {epoch}/{MAX_EPOCHS}")
     model.train()
     epoch_loss = 0
     step = 0
+    criterion = loss_scheduler(epoch)
     step_start = time.time()
     for batch_data in train_loader:
         data_loaded_time = time.time() - step_start
@@ -369,35 +403,21 @@ for epoch in range(ep_start, max_epochs+1):
         with torch.amp.autocast('cuda'):
             target = inputs.clone()
             if DO_MASK:
-                inputs = inputs*~mask[:,:,None,None,None] - 1.0*mask[:,:,None,None,None]
-                num_masked = torch.sum(mask,axis=1)
-                
-            for name, param in model.named_parameters():
-                if param.grad is not None and torch.isnan(param.grad).any():
-                    print(f"NaN found in gradient of parameter: {name}")
-                    exit()
-            outputs = model(inputs)
- 
-            out_mask = torch.concatenate([mask[:,:,None,None,None],mask[:,:,None,None,None],mask[:,:,None,None,None]], axis=1)
-            print(out_mask.shape)
-            print(outputs.shape)
-            print(target.shape)
-            print(out_mask.shape)
-
-            loss = loss_function(outputs, target)#loss_function(outputs*out_mask, target*mask[:,:,None,None,None])
-            #loss = loss * torch.sum(num_masked)
-
-            if np.isnan(loss.item()):
-                logger.warning("nan value encountered (1)!")
-                exit()
+                inputs = inputs*~mask[:,:,None,None,None]
+            # for name, param in model.named_parameters():
+            #     if param.grad is not None and torch.isnan(param.grad).any():
+            #         print(f"NaN found in gradient of parameter: {name}")
+            #         exit()
+            outputs = model(inputs)            
+            loss = criterion(outputs, target)
         scaler.scale(loss).backward()
         scaler.step(optimizer)
         scaler.update()
-        if epoch > 10 and loss.item() > 1e5:
-            logger.warning(f"large loss encountered: {loss.item()}!")
-            exit()
+        # if epoch > 10 and loss.item() > 1e5:
+        #     logger.warning(f"large loss encountered: {loss.item()}!")
+        #     exit()
         if np.isnan(loss.item()):
-            logger.warning("nan value encountered (2)!")
+            logger.warning("nan value encountered!")
             exit()
         epoch_loss += loss.item()
         logger.info(
@@ -412,7 +432,7 @@ for epoch in range(ep_start, max_epochs+1):
     epoch_loss_values.append(epoch_loss)
     logger.info(f"epoch {epoch} average loss: {epoch_loss:.4f}")
 
-    if epoch % val_interval == 0:
+    if epoch % VAL_INTERVAL == 0:
         model.eval()
         with torch.no_grad():
             for val_data in val_loader:
@@ -430,25 +450,30 @@ for epoch in range(ep_start, max_epochs+1):
             metric_values.append(metric)
             mse_metric.reset()
 
+            checkpoint = {
+                'epoch': epoch,
+                'model_state_dict': model.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'scheduler_state_dict': lr_scheduler.state_dict(),
+            }
             torch.save(
-                    model.state_dict(),
-                    os.path.join(save_dir, "latest_model.pth"),
-                )
+                checkpoint,
+                os.path.join(save_dir, 'latest_checkpoint.pth'),
+            )
             logger.info(f"saved latest model at epoch: {epoch}")
 
             if metric > best_metric:
                 best_metric = metric
                 best_metric_epoch = epoch
                 torch.save(
-                    model.state_dict(),
-                    os.path.join(save_dir, "best_metric_model.pth"),
+                    checkpoint,
+                    os.path.join(save_dir, 'best_checkpoint.pth'),
                 )
                 logger.info(f"saved new best metric model at epoch: {epoch}")
                 
             # Save the loss list
-            with open(os.path.join(save_dir, 'training_data.pkl'), 'wb') as f:
+            with open(os.path.join(save_dir, 'training_info.pkl'), 'wb') as f:
                 pickle.dump({
-                    'epoch': epoch,
                     'epoch_loss_values': epoch_loss_values,
                     'metric_values': metric_values,
                 }, f)
@@ -462,9 +487,6 @@ total_time = time.time() - total_start
 
 # %%
 logger.info(f"train completed, best_metric: {best_metric:.4f} at epoch: {best_metric_epoch}")
-logger.info(f"Training time: {total_time//max_epochs:.1f}s/ep (total: {total_time//3600:.0f}h {(total_time//60)%60:.0f}m)")
-
-# %%
-
+logger.info(f"Training time: {total_time//MAX_EPOCHS:.1f}s/ep (total: {total_time//3600:.0f}h {(total_time//60)%60:.0f}m)")
 
 
