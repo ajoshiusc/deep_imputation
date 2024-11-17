@@ -19,11 +19,11 @@ from logger import Logger
 logger = Logger(log_level='DEBUG')
 
 # %%
-RUN_ID = 0
+RUN_ID = 1
 MAX_EPOCHS = 2000
-TRAIN_DATA_SIZE = None
+TRAIN_DATA_SIZE = 100
 BATCHSIZE_TRAIN = 2
-VAL_INTERVAL = 10
+VAL_INTERVAL = 5
 # TRAIN_RATIO = 0.8
 RANDOM_SEED = 0
 ROOT_DIR = "/scratch1/sachinsa/brats_seg"
