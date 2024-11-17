@@ -38,7 +38,7 @@ TRAIN_RATIO = 0.8
 RANDOM_SEED = 0
 CONTINUE_TRAINING = False
 TRAIN_DATA_SHUFFLE = True
-ROOT_DIR = "/scratch1/sachinsa/monai_data_1"
+ROOT_DIR = "/scratch1/sachinsa/cont_syn"
 
 # test code sanity (for silly errors)
 SANITY_CHECK = False
