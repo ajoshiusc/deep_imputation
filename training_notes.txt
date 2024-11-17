@@ -1,4 +1,13 @@
-TODO
+COMPLETED
+----
+SLURM_JOB_ID = 27431739
+run_id = 20
+QR_REGRESSION = True
+DO_MASK = True
+max_epochs = 6000
+TRAIN_DATA_SIZE = 50
+
+COMPLETED
 ----
 SLURM_JOB_ID = 26815400
 run_id = 82
