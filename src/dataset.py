@@ -50,6 +50,7 @@ class BraTSDataset(Dataset):
         self.has_mask = has_mask
         self.mask = Mask(num_samples=len(self.image_filenames), seed=seed)
         self.ids = [filepath['image'][11:-7] for filepath in self.image_filenames]
+        # TODO: if transform == None, use a default transform that simply loads the data
         self.transform = transform
 
     def __len__(self):

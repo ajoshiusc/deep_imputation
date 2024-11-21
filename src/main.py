@@ -25,13 +25,13 @@ logger = Logger(log_level='DEBUG')
 # * TRAIN_RATIO: proportion of total dataset to be used for training. Rest will be used for validating
 
 # %%
-RUN_ID = 20
+RUN_ID = 21
 QR_REGRESSION = True
 DO_MASK = True
-SET_VARIANCE = True
 MAX_EPOCHS = 6000
-TRAIN_DATA_SIZE = 50
+TRAIN_DATA_SIZE = 200
 BATCHSIZE_TRAIN = 2
+SET_VARIANCE = True
 # PIXEL_DOWNSAMPLE = [2, 2, 2]
 VAL_INTERVAL = 10
 TRAIN_RATIO = 0.8
@@ -75,28 +75,6 @@ logger.info(f"ROOT_DIR: {ROOT_DIR}")
 print("")
 
 # %% [markdown]
-# ## Check if this is a notebook or not
-
-# %%
-def is_notebook():
-    try:
-        shell = get_ipython().__class__.__name__
-        if shell == 'ZMQInteractiveShell':
-            return True  # Jupyter notebook or Jupyter QtConsole
-        elif shell == 'TerminalInteractiveShell':
-            return False  # Terminal running IPython
-        else:
-            return False  # Other types
-    except NameError:
-        return False  # Standard Python interpreter
-
-# Example usage
-if is_notebook():
-    logger.debug("This is a Jupyter Notebook.")
-else:
-    logger.debug("This is a Python script (not a Jupyter Notebook).")
-
-# %% [markdown]
 # ## Setup imports
 
 # %%
@@ -105,35 +83,18 @@ import numpy as np
 import pdb
 import time
 import matplotlib.pyplot as plt
-import json
 import pickle
 
 from monai.config import print_config
-from monai.transforms import (
-    Compose,
-)
 from monai.networks.nets import UNet
-from monai.transforms import (
-    LoadImage,
-    Resize,
-    NormalizeIntensity,
-    Orientation,
-    RandFlip,
-    RandScaleIntensity,
-    RandShiftIntensity,
-    RandSpatialCrop,
-    CenterSpatialCrop,
-    Spacing,
-    EnsureType,
-    EnsureChannelFirst,
-)
 from monai.metrics import MSEMetric
 from monai.utils import set_determinism
 
 import torch
-from torch.utils.data import Dataset, DataLoader, random_split
+from torch.utils.data import DataLoader, random_split
 
-from dataset import BrainMRIDataset
+from dataset import BraTSDataset
+from transforms import contr_syn_transform_2 as data_transform
 
 # print_config()
 
@@ -152,53 +113,6 @@ else:
 set_determinism(seed=RANDOM_SEED)
 
 # %% [markdown]
-# ## Setup transforms for training and validation
-# 
-
-# %%
-# crop_size = [224, 224, 144]
-# resize_size = [crop_size[i]//PIXEL_DOWNSAMPLE[i] for i in range(len(crop_size))]
-resize_size = [64,64,64]
-
-train_transform = Compose(
-    [
-        # load 4 Nifti images and stack them together
-        LoadImage(),
-        EnsureChannelFirst(),
-        EnsureType(),
-        Orientation(axcodes="RAS"),
-        # Spacing(
-        #     pixdim=(1.0, 1.0, 1.0),
-        #     mode=("bilinear", "nearest"),
-        # ),
-        # RandSpatialCrop(roi_size=crop_size, random_size=False),
-        Resize(spatial_size=resize_size, mode='nearest'),
-        # RandFlip(prob=0.5, spatial_axis=0),
-        # RandFlip(prob=0.5, spatial_axis=1),
-        # RandFlip(prob=0.5, spatial_axis=2),
-        NormalizeIntensity(nonzero=True, channel_wise=True),
-        # RandScaleIntensity(factors=0.1, prob=1.0),
-        # RandShiftIntensity(offsets=0.1, prob=1.0),
-    ]
-)
-
-val_transform = Compose(
-    [
-        LoadImage(),
-        EnsureChannelFirst(),
-        EnsureType(),
-        Orientation(axcodes="RAS"),
-        # Spacing(
-        #     pixdim=(1.0, 1.0, 1.0),
-        #     mode=("bilinear", "nearest"),
-        # ),
-        # CenterSpatialCrop(roi_size=crop_size), # added this because model was not handling 155dims
-        Resize(spatial_size=resize_size, mode='nearest'),
-        NormalizeIntensity(nonzero=True, channel_wise=True),
-    ]
-)
-
-# %% [markdown]
 # ## Load data
 
 # %% [markdown]
@@ -207,8 +121,8 @@ val_transform = Compose(
 # %%
 from torch.utils.data import Subset
 
-all_dataset = BrainMRIDataset(
-    root_dir=ROOT_DIR,
+all_dataset = BraTSDataset(
+    version='2017',
     seed = RANDOM_SEED
 )
 
@@ -216,8 +130,8 @@ all_dataset = BrainMRIDataset(
 train_dataset, val_dataset = random_split(all_dataset, [TRAIN_RATIO, 1-TRAIN_RATIO],
                                           generator=torch.Generator().manual_seed(RANDOM_SEED))
 
-train_dataset.dataset.transform = train_transform
-val_dataset.dataset.transform = val_transform
+train_dataset.dataset.transform = data_transform['train']
+val_dataset.dataset.transform = data_transform['val']
 
 if TRAIN_DATA_SIZE:
     train_dataset = Subset(train_dataset, list(range(TRAIN_DATA_SIZE)))
@@ -234,28 +148,6 @@ logger.debug("Data loaded")
 logger.debug(f"Length of dataset: {len(train_dataset)}, {len(val_dataset)}")
 logger.debug(f"Batch-size: {BATCHSIZE_TRAIN}, {BATCHSIZE_VAL}")
 logger.debug(f"Length of data-loaders: {len(train_loader)}, {len(val_loader)}")
-
-# %% [markdown]
-# ## Check data shape and visualize
-
-# %%
-# pick one image from DecathlonDataset to visualize and check the 4 channels
-if is_notebook():
-    channels = ["FLAIR", "T1w", "T1gd", "T2w"]
-    val_data_example = val_dataset[0]['image']
-    _, im_length, im_width, im_height = val_data_example.shape
-    logger.debug(f"image shape: {val_data_example.shape}")
-    plt.figure("image", (24, 6))
-    for i in range(4):
-        plt.subplot(1, 4, i + 1)
-        plt.title(channels[i], fontsize=30)
-        brain_slice = val_data_example[i, :, :, im_height//2].detach().cpu().T
-        plt.xticks([0, im_width - 1], [0, im_width - 1], fontsize=15)
-        plt.yticks([0, im_length - 1], [0, im_length - 1], fontsize=15)
-        plt.imshow(brain_slice, cmap="gray")
-        cbar = plt.colorbar()
-        cbar.ax.tick_params(labelsize=20)
-    plt.show()
 
 # %% [markdown]
 # ## Create Model, Loss, Optimizer
@@ -404,18 +296,11 @@ for epoch in range(ep_start, MAX_EPOCHS+1):
             target = inputs.clone()
             if DO_MASK:
                 inputs = inputs*~mask[:,:,None,None,None]
-            # for name, param in model.named_parameters():
-            #     if param.grad is not None and torch.isnan(param.grad).any():
-            #         print(f"NaN found in gradient of parameter: {name}")
-            #         exit()
             outputs = model(inputs)            
             loss = criterion(outputs, target)
         scaler.scale(loss).backward()
         scaler.step(optimizer)
         scaler.update()
-        # if epoch > 10 and loss.item() > 1e5:
-        #     logger.warning(f"large loss encountered: {loss.item()}!")
-        #     exit()
         if np.isnan(loss.item()):
             logger.warning("nan value encountered!")
             exit()
