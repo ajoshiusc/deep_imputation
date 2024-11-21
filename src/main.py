@@ -8,7 +8,7 @@
 # Challenge: **Drop some of the modalities randomly and reconstruct it by imputing with a 3D U-Net**
 
 # %%
-from logger import Logger
+from utils.logger import Logger
 logger = Logger(log_level='DEBUG')
 
 # %% [markdown]
@@ -25,7 +25,7 @@ logger = Logger(log_level='DEBUG')
 # * TRAIN_RATIO: proportion of total dataset to be used for training. Rest will be used for validating
 
 # %%
-RUN_ID = 0
+RUN_ID = 22
 QR_REGRESSION = True
 DO_MASK = True
 MAX_EPOCHS = 6000
@@ -41,7 +41,7 @@ TRAIN_DATA_SHUFFLE = True
 ROOT_DIR = "/scratch1/sachinsa/cont_syn"
 
 # test code sanity (for silly errors)
-SANITY_CHECK = True
+SANITY_CHECK = False
 if SANITY_CHECK:
     RUN_ID = 0
     MAX_EPOCHS = 15
@@ -94,8 +94,8 @@ from monai.utils import set_determinism
 import torch
 from torch.utils.data import DataLoader, random_split
 
-from dataset import BraTSDataset
-from transforms import contr_syn_transform_2 as data_transform
+from utils.dataset import BraTSDataset
+from utils.transforms import contr_syn_transform_2 as data_transform
 
 # print_config()
 
@@ -120,7 +120,7 @@ set_determinism(seed=RANDOM_SEED)
 # Create training and validation dataset
 
 # %%
-from transforms import tumor_seg_transform
+from utils.transforms import tumor_seg_transform
 from torch.utils.data import Subset
 
 train_dataset = BraTSDataset(
