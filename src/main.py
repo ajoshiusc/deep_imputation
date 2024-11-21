@@ -25,7 +25,7 @@ logger = Logger(log_level='DEBUG')
 # * TRAIN_RATIO: proportion of total dataset to be used for training. Rest will be used for validating
 
 # %%
-RUN_ID = 21
+RUN_ID = 0
 QR_REGRESSION = True
 DO_MASK = True
 MAX_EPOCHS = 6000
@@ -41,7 +41,7 @@ TRAIN_DATA_SHUFFLE = True
 ROOT_DIR = "/scratch1/sachinsa/cont_syn"
 
 # test code sanity (for silly errors)
-SANITY_CHECK = False
+SANITY_CHECK = True
 if SANITY_CHECK:
     RUN_ID = 0
     MAX_EPOCHS = 15
@@ -80,6 +80,7 @@ print("")
 # %%
 import os
 import numpy as np
+import pandas as pd
 import pdb
 import time
 import matplotlib.pyplot as plt
@@ -119,20 +120,24 @@ set_determinism(seed=RANDOM_SEED)
 # Create training and validation dataset
 
 # %%
+from transforms import tumor_seg_transform
 from torch.utils.data import Subset
 
-all_dataset = BraTSDataset(
+train_dataset = BraTSDataset(
     version='2017',
-    seed = RANDOM_SEED
+    section = 'training',
+    seed = RANDOM_SEED,
+    transform = tumor_seg_transform['train']
 )
 
-# Split the dataset
-train_dataset, val_dataset = random_split(all_dataset, [TRAIN_RATIO, 1-TRAIN_RATIO],
-                                          generator=torch.Generator().manual_seed(RANDOM_SEED))
+val_dataset = BraTSDataset(
+    version='2017',
+    section = 'validation',
+    seed = RANDOM_SEED,
+    transform = tumor_seg_transform['val']
+)
 
-train_dataset.dataset.transform = data_transform['train']
-val_dataset.dataset.transform = data_transform['val']
-
+# TODO: add logic to get subset inside BraTSDataset
 if TRAIN_DATA_SIZE:
     train_dataset = Subset(train_dataset, list(range(TRAIN_DATA_SIZE)))
     val_dataset = Subset(val_dataset, list(range(TRAIN_DATA_SIZE//4)))
@@ -149,6 +154,12 @@ logger.debug(f"Length of dataset: {len(train_dataset)}, {len(val_dataset)}")
 logger.debug(f"Batch-size: {BATCHSIZE_TRAIN}, {BATCHSIZE_VAL}")
 logger.debug(f"Length of data-loaders: {len(train_loader)}, {len(val_loader)}")
 
+# %%
+# Load masks
+mask_root_dir = "/scratch1/sachinsa/data/masks/brats2017"
+train_mask_df = pd.read_csv(os.path.join(mask_root_dir, "train_mask.csv"), index_col=0)
+val_mask_df = pd.read_csv(os.path.join(mask_root_dir, "val_mask.csv"), index_col=0)
+
 # %% [markdown]
 # ## Create Model, Loss, Optimizer
 
@@ -158,6 +169,8 @@ logger.debug(f"Length of data-loaders: {len(train_loader)}, {len(val_loader)}")
 # %%
 device = torch.device("cuda:0")
 out_channels = 12 if QR_REGRESSION else 8
+
+# TODO: finetune model parameters
 model = UNet(
     spatial_dims=3, # 3D
     in_channels=4,
@@ -246,17 +259,25 @@ def loss_scheduler(epoch):
             return gaussian_nll_loss
 
 # %%
+from monai.inferers import sliding_window_inference
+
 mse_metric = MSEMetric(reduction="mean")
 
 # define inference method
 def inference(input):
     def _compute(input):
-        output = model(input)
-        return output
+        return sliding_window_inference(
+            inputs=input,
+            roi_size=(240, 240, 160),
+            sw_batch_size=1,
+            predictor=model,
+            overlap=0.5,
+        )
+        # output = model(input)
+        # return output
 
     with torch.amp.autocast('cuda'):
         return _compute(input)
-
 
 # use amp to accelerate training
 scaler = torch.amp.GradScaler('cuda')
@@ -283,21 +304,21 @@ for epoch in range(ep_start, MAX_EPOCHS+1):
     step = 0
     criterion = loss_scheduler(epoch)
     step_start = time.time()
-    for batch_data in train_loader:
+    for train_data in train_loader:
         data_loaded_time = time.time() - step_start
         step += 1
-        inputs, mask, id = (
-            batch_data["image"].to(device),
-            batch_data["mask"].to(device),
-            batch_data["id"],
+        train_inputs, train_ids = (
+            train_data["image"].to(device),
+            train_data["id"],
         )
+        train_mask = torch.from_numpy(train_mask_df.loc[train_ids.tolist(), :].values).to(device)
         optimizer.zero_grad()
         with torch.amp.autocast('cuda'):
-            target = inputs.clone()
+            target = train_inputs.clone()
             if DO_MASK:
-                inputs = inputs*~mask[:,:,None,None,None]
-            outputs = model(inputs)            
-            loss = criterion(outputs, target)
+                train_inputs = train_inputs*~train_mask[:,:,None,None,None]
+            train_outputs = model(train_inputs)            
+            loss = criterion(train_outputs, target)
         scaler.scale(loss).backward()
         scaler.step(optimizer)
         scaler.update()
@@ -321,10 +342,11 @@ for epoch in range(ep_start, MAX_EPOCHS+1):
         model.eval()
         with torch.no_grad():
             for val_data in val_loader:
-                val_inputs, val_mask = (
-                    batch_data["image"].to(device),
-                    batch_data["mask"].to(device),
+                val_inputs, val_ids = (
+                    val_data["image"].to(device),
+                    val_data["id"],
                 )
+                val_mask = torch.from_numpy(val_mask_df.loc[val_ids.tolist(), :].values).to(device)
                 val_target = val_inputs.clone()
                 val_inputs = val_inputs*~val_mask[:,:,None,None,None]
                 val_outputs = inference(val_inputs)

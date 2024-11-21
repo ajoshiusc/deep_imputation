@@ -20,6 +20,7 @@ class BraTSDataset(Dataset):
     def __init__(self, version, section='training', train_ratio=0.8, transform=None, seed=0, has_mask=True, has_label=True):
         self.version = version
         self.root_dir = DATA_PATH[f'BraTS_{version}']
+        np.random.seed(seed)
 
         if version == '2017':
             self.properties = loadBRATS2017(self.root_dir)
