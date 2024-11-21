@@ -1,5 +1,6 @@
 from monai.transforms import (
     Compose,
+    # Invertd,
     LoadImaged,
     MapTransform,
     NormalizeIntensityd,
@@ -57,6 +58,18 @@ contr_syn_transform_1 = {
         CenterSpatialCrop(roi_size=[224, 224, 144]), # added this because model was not handling 155dims
         Resize(spatial_size=[64,64,64], mode='nearest'),
         NormalizeIntensity(nonzero=True, channel_wise=True),
+    ]),
+    'test': Compose([
+        LoadImage(),
+        EnsureChannelFirst(),
+        EnsureType(),
+        Orientation(axcodes="RAS"),
+        Spacing(
+            pixdim=(1.0, 1.0, 1.0),
+            mode=("bilinear", "nearest"),
+        ),
+        CenterSpatialCrop(roi_size=[224, 224, 144]),
+        NormalizeIntensity(nonzero=True, channel_wise=True),
     ])
 }
 
@@ -75,6 +88,13 @@ contr_syn_transform_2 = {
         EnsureType(),
         Orientation(axcodes="RAS"),
         Resize(spatial_size=[64,64,64], mode='nearest'),
+        NormalizeIntensity(nonzero=True, channel_wise=True),
+    ]),
+    'test': Compose([
+        LoadImage(),
+        EnsureChannelFirst(),
+        EnsureType(),
+        Orientation(axcodes="RAS"),
         NormalizeIntensity(nonzero=True, channel_wise=True),
     ])
 }

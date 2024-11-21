@@ -1,5 +1,14 @@
 COMPLETED
 ----
+SLURM_JOB_ID = 27571733
+RUN_ID = 21
+QR_REGRESSION = True
+DO_MASK = True
+MAX_EPOCHS = 6000
+TRAIN_DATA_SIZE = 200
+
+COMPLETED
+----
 SLURM_JOB_ID = 27431739
 run_id = 20
 QR_REGRESSION = True
@@ -36,38 +45,3 @@ SET_VARIANCE = True
 max_epochs = 600
 TRAIN_DATA_SIZE = 200
 BATCHSIZE_TRAIN = 2
-
-
-
-COMPLETED
-----
-SLURM_JOB_ID = 26756223
-run_id = 88
-DO_MASK = True
-SET_VARIANCE = True
-max_epochs = 700
-TRAIN_DATA_SIZE = 60
-
-COMPLETED
-----
-SLURM_JOB_ID = 26712668
-run_id = 30
-DO_MASK = False
-SET_VARIANCE = True
-max_epochs = 500
-
-COMPLETED
-----
-SLURM_JOB_ID = 26716098
-run_id = 80
-DO_MASK = True
-SET_VARIANCE = True
-max_epochs = 600
-
-COMPLETED
-----
-SLURM_JOB_ID = 26712320
-run_id = 40
-DO_MASK = True
-SET_VARIANCE = False
-max_epochs = 400

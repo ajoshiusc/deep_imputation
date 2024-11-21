@@ -49,7 +49,8 @@ class BraTSDataset(Dataset):
         
         self.has_mask = has_mask
         self.mask = Mask(num_samples=len(self.image_filenames), seed=seed)
-
+        self.ids = [filepath['image'][11:-7] for filepath in self.image_filenames]
+        # TODO: if transform == None, use a default transform that simply loads the data
         self.transform = transform
 
     def __len__(self):
@@ -58,10 +59,11 @@ class BraTSDataset(Dataset):
     def __getitem__(self, idx):
         img_name = os.path.normpath(os.path.join(self.root_dir,self.image_filenames[idx]['image']))
         mask = self.mask.get(idx)
-        
-        if self.transform:
-            image = self.transform(img_name)
-
+        image = self.transform(img_name)
         mask = torch.from_numpy(mask)
 
         return {"id": self.image_filenames[idx]['image'][11:20], "image":image, "mask":mask}
+    
+    def get_with_id(self, id):
+        idx = self.ids.index(id)
+        return self.__getitem__(idx)
