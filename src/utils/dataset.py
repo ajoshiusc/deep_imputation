@@ -61,9 +61,16 @@ class BraTSDataset(Dataset):
             # removing BRATS_065 dataset as it disrupts training
             self.ids = self.ids[self.ids != 65]
     
-    def get_with_id(self, id):
-        idx = self.ids.index(id)
-        return self.__getitem__(idx)
+    def get_with_id(self, id_):
+        index_ = np.where(self.ids == id_)[0]
+        if not len(index_):
+            return None
+        index = index_[0]
+        return self.__getitem__(index)
+    
+    def get_random(self):
+        id_ = np.random.choice(self.ids)
+        return self.get_with_id(id_)
     
     def get_ids(self) -> np.ndarray:
         """

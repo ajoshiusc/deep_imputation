@@ -15,7 +15,7 @@
 # 1. The segmentations are combined to generate the final labels of the tumor sub-regions (Fig.D): edema (yellow), non-enhancing solid core (red), necrotic/cystic core (green), enhancing core (blue).
 
 # %%
-from logger import Logger
+from utils.logger import Logger
 logger = Logger(log_level='DEBUG')
 
 # %%
