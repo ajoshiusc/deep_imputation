@@ -1,6 +1,6 @@
 import numpy as np
 
-from logger import Logger
+from utils.logger import Logger
 
 logger = Logger(log_level='DEBUG')
 

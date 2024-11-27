@@ -15,17 +15,17 @@
 # 1. The segmentations are combined to generate the final labels of the tumor sub-regions (Fig.D): edema (yellow), non-enhancing solid core (red), necrotic/cystic core (green), enhancing core (blue).
 
 # %%
-from logger import Logger
+from utils.logger import Logger
 logger = Logger(log_level='DEBUG')
 
 # %%
-RUN_ID = 1
-MAX_EPOCHS = 2000
-TRAIN_DATA_SIZE = 100
-BATCHSIZE_TRAIN = 2
-VAL_INTERVAL = 5
-# TRAIN_RATIO = 0.8
+RUN_ID = 10
+USE_PROCESSED = True
 RANDOM_SEED = 0
+MAX_EPOCHS = 2000
+TRAIN_DATA_SIZE = None
+VAL_INTERVAL = 5
+BATCHSIZE_TRAIN = 2
 ROOT_DIR = "/scratch1/sachinsa/brats_seg"
 DATA_ROOT_DIR = "/scratch1/sachinsa/data"
 
@@ -39,12 +39,12 @@ if SANITY_CHECK:
 
 logger.info("PARAMETERS\n-----------------")
 logger.info(f"RUN_ID: {RUN_ID}")
+logger.info(f"USE_PROCESSED: {USE_PROCESSED}")
+logger.info(f"RANDOM_SEED: {RANDOM_SEED}")
 logger.info(f"MAX_EPOCHS: {MAX_EPOCHS}")
 logger.info(f"TRAIN_DATA_SIZE: {TRAIN_DATA_SIZE}")
-logger.info(f"BATCHSIZE_TRAIN: {BATCHSIZE_TRAIN}")
 logger.info(f"VAL_INTERVAL: {VAL_INTERVAL}")
-# logger.info(f"TRAIN_RATIO: {TRAIN_RATIO}")
-logger.info(f"RANDOM_SEED: {RANDOM_SEED}")
+logger.info(f"BATCHSIZE_TRAIN: {BATCHSIZE_TRAIN}")
 logger.info(f"ROOT_DIR: {ROOT_DIR}")
 print("")
 
@@ -53,10 +53,10 @@ print("")
 
 # %%
 import os
-import shutil
-import tempfile
 import time
 import matplotlib.pyplot as plt
+import pdb
+import pandas as pd
 import pickle
 
 from monai.apps import DecathlonDataset
@@ -69,28 +69,18 @@ from monai.metrics import DiceMetric
 from monai.networks.nets import SegResNet
 from monai.transforms import (
     Activations,
-    Activationsd,
     AsDiscrete,
-    AsDiscreted,
     Compose,
-    Invertd,
-    LoadImaged,
-    MapTransform,
-    NormalizeIntensityd,
-    Orientationd,
-    RandFlipd,
-    RandScaleIntensityd,
-    RandShiftIntensityd,
-    RandSpatialCropd,
-    Spacingd,
-    EnsureTyped,
-    EnsureChannelFirstd,
 )
 from monai.utils import set_determinism
-# import onnxruntime
 from tqdm import tqdm
 
 import torch
+from torch.utils.data import Subset
+
+from utils.dataset import BraTSDataset
+from utils.model import create_SegResNet, inference
+from utils.transforms import tumor_seg_transform
 
 # print_config()
 
@@ -109,117 +99,36 @@ else:
 set_determinism(seed=RANDOM_SEED)
 
 # %% [markdown]
-# ### Define a new transform to convert brain tumor labels
-# 
-# Here we convert the multi-classes labels into multi-labels segmentation task in One-Hot format.
-
-# %%
-class ConvertToMultiChannelBasedOnBratsClassesd(MapTransform):
-    """
-    Convert labels to multi channels based on brats classes:
-    label 1 is the peritumoral edema
-    label 2 is the GD-enhancing tumor
-    label 3 is the necrotic and non-enhancing tumor core
-    The possible classes are TC (Tumor core), WT (Whole tumor)
-    and ET (Enhancing tumor).
-
-    """
-
-    def __call__(self, data):
-        d = dict(data)
-        for key in self.keys:
-            result = []
-            # merge label 2 and label 3 to construct TC
-            result.append(torch.logical_or(d[key] == 2, d[key] == 3))
-            # merge labels 1, 2 and 3 to construct WT
-            result.append(torch.logical_or(torch.logical_or(d[key] == 2, d[key] == 3), d[key] == 1))
-            # label 2 is ET
-            result.append(d[key] == 2)
-            d[key] = torch.stack(result, axis=0).float()
-        return d
-
-# %% [markdown]
-# ## Setup transforms for training and validation
-
-# %%
-train_transform = Compose(
-    [
-        # load 4 Nifti images and stack them together
-        LoadImaged(keys=["image", "label"]),
-        EnsureChannelFirstd(keys="image"),
-        EnsureTyped(keys=["image", "label"]),
-        ConvertToMultiChannelBasedOnBratsClassesd(keys="label"),
-        Orientationd(keys=["image", "label"], axcodes="RAS"),
-        Spacingd(
-            keys=["image", "label"],
-            pixdim=(1.0, 1.0, 1.0),
-            mode=("bilinear", "nearest"),
-        ),
-        RandSpatialCropd(keys=["image", "label"], roi_size=[224, 224, 144], random_size=False),
-        RandFlipd(keys=["image", "label"], prob=0.5, spatial_axis=0),
-        RandFlipd(keys=["image", "label"], prob=0.5, spatial_axis=1),
-        RandFlipd(keys=["image", "label"], prob=0.5, spatial_axis=2),
-        NormalizeIntensityd(keys="image", nonzero=True, channel_wise=True),
-        RandScaleIntensityd(keys="image", factors=0.1, prob=1.0),
-        RandShiftIntensityd(keys="image", offsets=0.1, prob=1.0),
-    ]
-)
-val_transform = Compose(
-    [
-        LoadImaged(keys=["image", "label"]),
-        EnsureChannelFirstd(keys="image"),
-        EnsureTyped(keys=["image", "label"]),
-        ConvertToMultiChannelBasedOnBratsClassesd(keys="label"),
-        Orientationd(keys=["image", "label"], axcodes="RAS"),
-        Spacingd(
-            keys=["image", "label"],
-            pixdim=(1.0, 1.0, 1.0),
-            mode=("bilinear", "nearest"),
-        ),
-        NormalizeIntensityd(keys="image", nonzero=True, channel_wise=True),
-    ]
-)
-
-# %% [markdown]
 # ## Load data
 
 # %% [markdown]
 # Create training and validation dataset
 
-# %% [markdown]
-# ## Quickly load data with DecathlonDataset
-# 
-# Here we use `DecathlonDataset` to automatically download and extract the dataset.
-# It inherits MONAI `CacheDataset`, if you want to use less memory, you can set `cache_num=N` to cache N items for training and use the default args to cache all the items for validation, it depends on your memory size.
-
 # %%
-from torch.utils.data import Subset
-
-# here we don't cache any data in case out of memory issue
-train_dataset = DecathlonDataset(
-    root_dir=DATA_ROOT_DIR,
-    task="Task01_BrainTumour",
-    transform=train_transform,
-    section="training",
-    download=True,
-    cache_rate=0.0,
-    num_workers=8,#4,
-)
-val_dataset = DecathlonDataset(
-    root_dir=DATA_ROOT_DIR,
-    task="Task01_BrainTumour",
-    transform=val_transform,
-    section="validation",
-    download=False,
-    cache_rate=0.0,
-    num_workers=8,#4,
+train_dataset = BraTSDataset(
+    version='2017',
+    processed = USE_PROCESSED,
+    section = 'training',
+    seed = RANDOM_SEED,
+    transform = tumor_seg_transform['train']
 )
 
+val_dataset = BraTSDataset(
+    version='2017',
+    processed = USE_PROCESSED,
+    section = 'validation',
+    seed = RANDOM_SEED,
+    transform = tumor_seg_transform['val']
+)
+
+# TODO: add logic to get subset inside BraTSDataset
 if TRAIN_DATA_SIZE:
     train_dataset = Subset(train_dataset, list(range(TRAIN_DATA_SIZE)))
     val_dataset = Subset(val_dataset, list(range(TRAIN_DATA_SIZE//4)))
 
 BATCHSIZE_VAL = BATCHSIZE_TRAIN
+
+# Create data loaders
 train_loader = DataLoader(train_dataset, batch_size=BATCHSIZE_TRAIN, shuffle=True, num_workers=8)
 val_loader = DataLoader(val_dataset, batch_size=BATCHSIZE_VAL, shuffle=False, num_workers=8)
 
@@ -227,6 +136,12 @@ logger.debug("Data loaded")
 logger.debug(f"Length of dataset: {len(train_dataset)}, {len(val_dataset)}")
 logger.debug(f"Batch-size: {BATCHSIZE_TRAIN}, {BATCHSIZE_VAL}")
 logger.debug(f"Length of data-loaders: {len(train_loader)}, {len(val_loader)}")
+
+# %%
+# Load masks
+mask_root_dir = "/scratch1/sachinsa/data/masks/brats2017"
+train_mask_df = pd.read_csv(os.path.join(mask_root_dir, "train_mask.csv"), index_col=0)
+val_mask_df = pd.read_csv(os.path.join(mask_root_dir, "val_mask.csv"), index_col=0)
 
 # %% [markdown]
 # ## Create Model, Loss, Optimizer
@@ -236,26 +151,8 @@ logger.debug(f"Length of data-loaders: {len(train_loader)}, {len(val_loader)}")
 
 # %%
 device = torch.device("cuda:0")
-model = SegResNet(
-    blocks_down=[1, 2, 2, 4],
-    blocks_up=[1, 1, 1],
-    init_filters=16,
-    in_channels=4,
-    out_channels=3,
-    dropout_prob=0.2,
-).to(device)
+model = create_SegResNet(device)
 logger.debug("Model defined")
-
-# %%
-# Calculate and display the total number of parameters
-def count_parameters(model):
-    return sum(p.numel() for p in model.parameters() if p.requires_grad)
-
-total_params = count_parameters(model)
-logger.debug(f"Total number of trainable parameters: {total_params}")
-
-# Print the model architecture
-# logger.debug(f"Model Architecture:\n {model}")
 
 # %%
 optimizer = torch.optim.Adam(model.parameters(), 1e-4, weight_decay=1e-5)
@@ -273,29 +170,11 @@ dice_metric_batch = DiceMetric(include_background=True, reduction="mean_batch")
 
 post_trans = Compose([Activations(sigmoid=True), AsDiscrete(threshold=0.5)])
 
-
-# define inference method
-def inference(input):
-    def _compute(input):
-        return sliding_window_inference(
-            inputs=input,
-            roi_size=(240, 240, 160),
-            sw_batch_size=1,
-            predictor=model,
-            overlap=0.5,
-        )
-
-    with torch.amp.autocast('cuda'):
-        return _compute(input)
-
-
-# use amp to accelerate training
-scaler = torch.cuda.amp.GradScaler()
-# enable cuDNN benchmark
+scaler = torch.amp.GradScaler('cuda')
 torch.backends.cudnn.benchmark = True
 
 # %% [markdown]
-# ## Execute a typical PyTorch training process
+# ## Train the model
 
 # %%
 best_metric = -1
@@ -320,14 +199,16 @@ for epoch in range(1, MAX_EPOCHS+1):
     for batch_data in train_loader:
         data_loaded_time = time.time() - step_start
         step += 1
-        inputs, labels = (
+        train_inputs, train_labels = (
             batch_data["image"].to(device),
             batch_data["label"].to(device),
         )
+        if USE_PROCESSED:
+            train_inputs = train_inputs[:, :4, ...]
         optimizer.zero_grad()
         with torch.amp.autocast('cuda'):
-            outputs = model(inputs)
-            loss = loss_function(outputs, labels)
+            train_outputs = model(train_inputs)
+            loss = loss_function(train_outputs, train_labels)
         scaler.scale(loss).backward()
         scaler.step(optimizer)
         scaler.update()
@@ -352,7 +233,9 @@ for epoch in range(1, MAX_EPOCHS+1):
                     val_data["image"].to(device),
                     val_data["label"].to(device),
                 )
-                val_outputs = inference(val_inputs)
+                if USE_PROCESSED:
+                    val_inputs = val_inputs[:, :4, ...]
+                val_outputs = inference(val_inputs, model)
                 val_outputs = [post_trans(i) for i in decollate_batch(val_outputs)]
                 dice_metric(y_pred=val_outputs, y=val_labels)
                 dice_metric_batch(y_pred=val_outputs, y=val_labels)
@@ -395,12 +278,12 @@ for epoch in range(1, MAX_EPOCHS+1):
                     'metric_values_et': metric_values_et
                 }, f)
             print(
-                f"current epoch: {epoch + 1} current mean dice: {metric:.4f}"
+                f"current epoch: {epoch} current mean dice: {metric:.4f}"
                 f" tc: {metric_tc:.4f} wt: {metric_wt:.4f} et: {metric_et:.4f}"
                 f"\nbest mean dice: {best_metric:.4f}"
                 f" at epoch: {best_metric_epoch}"
             )
-    print(f"time consuming of epoch {epoch + 1} is: {(time.time() - epoch_start):.4f}")
+    print(f"time consuming of epoch {epoch} is: {(time.time() - epoch_start):.4f}")
 total_time = time.time() - total_start
 
 # %%
