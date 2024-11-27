@@ -12,20 +12,32 @@ def loadBRATS2017(root_dir):
     return properties
 
 DATA_PATH = {
-    'BraTS_2017': '/scratch1/sachinsa/data/Task01_BrainTumour'
+    'BraTS_2017': '/scratch1/sachinsa/data/Task01_BrainTumour',
+}
+
+PROCESSED_DATA_PATH = {
+    'BraTS_2017': '/scratch1/sachinsa/data/contr_generated/run_22'
 }
 
 # TODO: Study MONAI DecathloanDataset and CacheDataset class to improve this class
 class BraTSDataset(Dataset):
-    def __init__(self, version, section='training', train_ratio=0.8, transform=None, seed=0, has_mask=True, has_label=True):
+    def __init__(self, version, processed=False, section='training', train_ratio=0.8, transform=None, seed=0, has_mask=True, has_label=True):
         self.version = version
+        self.processed = processed
         self.root_dir = DATA_PATH[f'BraTS_{version}']
         np.random.seed(seed)
 
-        if version == '2017':
+        if version[:4] == '2017':
             self.properties = loadBRATS2017(self.root_dir)
             self.ids = np.array([int(filepath['image'][17:-7]) for filepath in self.properties['training']])
             self._prune()
+            if processed:
+                self.processed_root_dir = PROCESSED_DATA_PATH[f'BraTS_{version}']
+        else:
+            print(f'Invalid version: {version}')
+            return
+        
+        if section != 'all':
             train_ids, val_ids = self._random_split(self.ids, train_ratio)
             if section == 'training':
                 self.ids = train_ids
@@ -46,8 +58,11 @@ class BraTSDataset(Dataset):
         return len(self.ids)
 
     def __getitem__(self, index):
+        imagePath = os.path.normpath(os.path.join(self.root_dir,self.properties['training'][index]['image']))
+        if self.processed:
+            imagePath = os.path.normpath(os.path.join(self.processed_root_dir,f'BRATS_{self.ids[index]}.nii.gz'))
         filepath = {
-            "image": os.path.normpath(os.path.join(self.root_dir,self.properties['training'][index]['image'])),
+            "image": imagePath,
             "label": os.path.normpath(os.path.join(self.root_dir,self.properties['training'][index]['label']))
         }
         image_dict = self.transform(filepath)

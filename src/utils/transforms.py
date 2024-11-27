@@ -155,18 +155,5 @@ tumor_seg_transform = {
             mode=("bilinear", "nearest"),
         ),
         NormalizeIntensityd(keys="image", nonzero=True, channel_wise=True),
-    ]),
-    'val_no_normalize': Compose([
-        LoadImaged(keys=["image", "label"]),
-        EnsureChannelFirstd(keys="image"),
-        EnsureTyped(keys=["image", "label"]),
-        ConvertToMultiChannelBasedOnBratsClassesd(keys="label"),
-        Orientationd(keys=["image", "label"], axcodes="RAS"),
-        Spacingd(
-            keys=["image", "label"],
-            pixdim=(1.0, 1.0, 1.0),
-            mode=("bilinear", "nearest"),
-        ),
-        NormalizeIntensityd(keys="image", nonzero=True, channel_wise=True),
     ])
 }

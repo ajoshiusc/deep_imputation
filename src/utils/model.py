@@ -1,4 +1,4 @@
-from monai.networks.nets import UNet
+from monai.networks.nets import UNet, SegResNet
 from monai.inferers import sliding_window_inference
 import torch
 
@@ -21,6 +21,17 @@ def create_UNet3D(out_channels, device, verbose=False):
 
     # # Print the model architecture
     # print(f"Model Architecture:\n {model}")
+    return model
+
+def create_SegResNet(device):
+    model = SegResNet(
+        blocks_down=[1, 2, 2, 4],
+        blocks_up=[1, 1, 1],
+        init_filters=16,
+        in_channels=4,
+        out_channels=3,
+        dropout_prob=0.2,
+    ).to(device)
     return model
 
 # define inference method

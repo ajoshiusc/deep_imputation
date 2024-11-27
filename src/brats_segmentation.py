@@ -19,7 +19,7 @@ from utils.logger import Logger
 logger = Logger(log_level='DEBUG')
 
 # %%
-RUN_ID = 1
+RUN_ID = 0
 MAX_EPOCHS = 2000
 TRAIN_DATA_SIZE = 100
 BATCHSIZE_TRAIN = 2
@@ -30,7 +30,7 @@ ROOT_DIR = "/scratch1/sachinsa/brats_seg"
 DATA_ROOT_DIR = "/scratch1/sachinsa/data"
 
 # test code sanity (for silly errors)
-SANITY_CHECK = False
+SANITY_CHECK = True
 if SANITY_CHECK:
     RUN_ID = 0
     MAX_EPOCHS = 15
