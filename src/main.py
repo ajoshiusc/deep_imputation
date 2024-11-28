@@ -1,5 +1,6 @@
 # %% [markdown]
-# # Deep Imputation of BraTS dataset with MONAI
+# # Contrast Synthesis with Uncertainty estimation
+# ## Using Quantile Regression and U-Nets
 # 
 # The dataset comes from http://medicaldecathlon.com/.  
 # Modality: Multimodal multisite MRI data (FLAIR, T1w, T1gd,T2w)  
@@ -17,8 +18,6 @@ logger = Logger(log_level='DEBUG')
 # * RUN_ID : set this to prevent overlapped saving of model and data
 # 
 # * DO_MASK : Set to True if mask is to be applied while training
-# * SET_VARIANCE : Set to True if variance is to be trained in loss function
-# * PIXEL_DOWNSAMPLE : How much to scale down each axis. In other words, mm per pixel/voxel
 # 
 # * MAX_EPOCHS
 # * VAL_INTERVAL : how frequently the validation code should be run
@@ -31,13 +30,10 @@ DO_MASK = True
 MAX_EPOCHS = 6000
 TRAIN_DATA_SIZE = 200
 BATCHSIZE_TRAIN = 2
-SET_VARIANCE = True
-# PIXEL_DOWNSAMPLE = [2, 2, 2]
 VAL_INTERVAL = 10
 TRAIN_RATIO = 0.8
 RANDOM_SEED = 0
 CONTINUE_TRAINING = False
-TRAIN_DATA_SHUFFLE = True
 ROOT_DIR = "/scratch1/sachinsa/cont_syn"
 
 # test code sanity (for silly errors)
@@ -52,7 +48,6 @@ params = {
     'RUN_ID': RUN_ID,
     'QR_REGRESSION': QR_REGRESSION,
     'DO_MASK': DO_MASK,
-    'SET_VARIANCE': SET_VARIANCE,
     'MAX_EPOCHS': MAX_EPOCHS,
     'ROOT_DIR': ROOT_DIR
 }
@@ -61,16 +56,13 @@ logger.info("PARAMETERS\n-----------------")
 logger.info(f"RUN_ID: {RUN_ID}")
 logger.info(f"QR_REGRESSION: {QR_REGRESSION}")
 logger.info(f"DO_MASK: {DO_MASK}")
-logger.info(f"SET_VARIANCE: {SET_VARIANCE}")
 logger.info(f"MAX_EPOCHS: {MAX_EPOCHS}")
 logger.info(f"TRAIN_DATA_SIZE: {TRAIN_DATA_SIZE}")
 logger.info(f"BATCHSIZE_TRAIN: {BATCHSIZE_TRAIN}")
-# logger.info(f"PIXEL_DOWNSAMPLE: {PIXEL_DOWNSAMPLE}")
 logger.info(f"VAL_INTERVAL: {VAL_INTERVAL}")
 logger.info(f"TRAIN_RATIO: {TRAIN_RATIO}")
 logger.info(f"RANDOM_SEED: {RANDOM_SEED}")
 logger.info(f"CONTINUE_TRAINING: {CONTINUE_TRAINING}")
-logger.info(f"TRAIN_DATA_SHUFFLE: {TRAIN_DATA_SHUFFLE}")
 logger.info(f"ROOT_DIR: {ROOT_DIR}")
 print("")
 
@@ -87,15 +79,15 @@ import matplotlib.pyplot as plt
 import pickle
 
 from monai.config import print_config
-from monai.networks.nets import UNet
 from monai.metrics import MSEMetric
 from monai.utils import set_determinism
 
 import torch
-from torch.utils.data import DataLoader, random_split
+from torch.utils.data import DataLoader, Subset
 
 from utils.dataset import BraTSDataset
-from utils.transforms import contr_syn_transform_2 as data_transform
+from utils.model import create_UNet3D, inference
+from utils.transforms import tumor_seg_transform
 
 # print_config()
 
@@ -120,9 +112,6 @@ set_determinism(seed=RANDOM_SEED)
 # Create training and validation dataset
 
 # %%
-from utils.transforms import tumor_seg_transform
-from torch.utils.data import Subset
-
 train_dataset = BraTSDataset(
     version='2017',
     section = 'training',
@@ -145,7 +134,7 @@ if TRAIN_DATA_SIZE:
 BATCHSIZE_VAL = BATCHSIZE_TRAIN
 
 # Create data loaders
-train_loader = DataLoader(train_dataset, batch_size=BATCHSIZE_TRAIN, shuffle=TRAIN_DATA_SHUFFLE,
+train_loader = DataLoader(train_dataset, batch_size=BATCHSIZE_TRAIN, shuffle=True,
     num_workers=8)
 val_loader = DataLoader(val_dataset, batch_size=BATCHSIZE_VAL, shuffle=False, num_workers=8)
 
@@ -169,28 +158,8 @@ val_mask_df = pd.read_csv(os.path.join(mask_root_dir, "val_mask.csv"), index_col
 # %%
 device = torch.device("cuda:0")
 out_channels = 12 if QR_REGRESSION else 8
-
-# TODO: finetune model parameters
-model = UNet(
-    spatial_dims=3, # 3D
-    in_channels=4,
-    out_channels=out_channels,
-    channels=(4, 8, 16),
-    strides=(2, 2),
-    num_res_units=2
-).to(device)
+model = create_UNet3D(out_channels, device)
 logger.debug("Model defined")
-
-# %%
-# Calculate and display the total number of parameters
-def count_parameters(model):
-    return sum(p.numel() for p in model.parameters() if p.requires_grad)
-
-total_params = count_parameters(model)
-# logger.debug(f"Total number of trainable parameters: {total_params}")
-
-# Print the model architecture
-# logger.debug(f"Model Architecture:\n {model}")
 
 # %%
 optimizer = torch.optim.Adam(model.parameters(), 1e-4, weight_decay=1e-5)
@@ -217,37 +186,7 @@ if CONTINUE_TRAINING:
 # ### Define Losses
 
 # %%
-def gaussian_nll_loss(outputs, target):
-    # input is 4 channel images, outputs is 8 channel images
-    outputs_mean = outputs[:, :4, ...]
-    if not SET_VARIANCE:
-        log_std = torch.zeros_like(outputs_mean) # sigma = 1
-    else:
-        log_std = outputs[:, 4:, ...]
-        eps = np.log(1e-6)/2 # -6.9
-
-        # TODO: should the clamping be with or without autograd?
-        log_std = log_std.clone()
-        with torch.no_grad():
-            log_std.clamp_(min=eps)
-
-    cost1 = (target - outputs_mean)**2 / (2*torch.exp(2*log_std))
-    cost2 = log_std
-
-    return torch.mean(cost1 + cost2)
-
-def mse_loss(outputs, target):
-    return torch.nn.functional.mse_loss(outputs[:, :4, ...], target)
-
-def qr_loss(out, tgt, q0=0.5, q1=0.841, q2=0.159):
-    out0 = out[:, :4, ...]
-    out1 = out[:, 4:8, ...]
-    out2 = out[:, 8:, ...]
-    custom_loss0 = torch.sum(torch.max(q0 * (out0 - tgt), (q0 - 1.0) * (out0 - tgt)))
-    custom_loss1 = torch.sum(torch.max(q1 * (out1 - tgt), (q1 - 1.0) * (out1 - tgt)))
-    custom_loss2 = torch.sum(torch.max(q2 * (out2 - tgt), (q2 - 1.0) * (out2 - tgt)))
-
-    return custom_loss0 + custom_loss1 + custom_loss2
+from utils.loss import qr_loss, mse_loss, gaussian_nll_loss
 
 def loss_scheduler(epoch):
     if QR_REGRESSION:
@@ -259,29 +198,9 @@ def loss_scheduler(epoch):
             return gaussian_nll_loss
 
 # %%
-from monai.inferers import sliding_window_inference
-
 mse_metric = MSEMetric(reduction="mean")
 
-# define inference method
-def inference(input):
-    def _compute(input):
-        return sliding_window_inference(
-            inputs=input,
-            roi_size=(240, 240, 160),
-            sw_batch_size=1,
-            predictor=model,
-            overlap=0.5,
-        )
-        # output = model(input)
-        # return output
-
-    with torch.amp.autocast('cuda'):
-        return _compute(input)
-
-# use amp to accelerate training
 scaler = torch.amp.GradScaler('cuda')
-# enable cuDNN benchmark
 torch.backends.cudnn.benchmark = True
 
 # %%
@@ -349,7 +268,7 @@ for epoch in range(ep_start, MAX_EPOCHS+1):
                 val_mask = torch.from_numpy(val_mask_df.loc[val_ids.tolist(), :].values).to(device)
                 val_target = val_inputs.clone()
                 val_inputs = val_inputs*~val_mask[:,:,None,None,None]
-                val_outputs = inference(val_inputs)
+                val_outputs = inference(val_inputs, model)
                 val_output_main = val_outputs[:,:4,...]
                 mse_metric(y_pred=val_output_main, y=val_target)
 

@@ -19,8 +19,8 @@ from utils.logger import Logger
 logger = Logger(log_level='DEBUG')
 
 # %%
-RUN_ID = 10
-USE_PROCESSED = True
+RUN_ID = 22
+USE_PROCESSED = False
 RANDOM_SEED = 0
 MAX_EPOCHS = 2000
 TRAIN_DATA_SIZE = None
@@ -30,7 +30,7 @@ ROOT_DIR = "/scratch1/sachinsa/brats_seg"
 DATA_ROOT_DIR = "/scratch1/sachinsa/data"
 
 # test code sanity (for silly errors)
-SANITY_CHECK = False
+SANITY_CHECK = True
 if SANITY_CHECK:
     RUN_ID = 0
     MAX_EPOCHS = 15
@@ -40,11 +40,11 @@ if SANITY_CHECK:
 logger.info("PARAMETERS\n-----------------")
 logger.info(f"RUN_ID: {RUN_ID}")
 logger.info(f"USE_PROCESSED: {USE_PROCESSED}")
-logger.info(f"RANDOM_SEED: {RANDOM_SEED}")
 logger.info(f"MAX_EPOCHS: {MAX_EPOCHS}")
 logger.info(f"TRAIN_DATA_SIZE: {TRAIN_DATA_SIZE}")
-logger.info(f"VAL_INTERVAL: {VAL_INTERVAL}")
 logger.info(f"BATCHSIZE_TRAIN: {BATCHSIZE_TRAIN}")
+logger.info(f"VAL_INTERVAL: {VAL_INTERVAL}")
+logger.info(f"RANDOM_SEED: {RANDOM_SEED}")
 logger.info(f"ROOT_DIR: {ROOT_DIR}")
 print("")
 
@@ -59,28 +59,23 @@ import pdb
 import pandas as pd
 import pickle
 
-from monai.apps import DecathlonDataset
 from monai.config import print_config
 from monai.data import DataLoader, decollate_batch
-from monai.handlers.utils import from_engine
 from monai.losses import DiceLoss
-from monai.inferers import sliding_window_inference
 from monai.metrics import DiceMetric
-from monai.networks.nets import SegResNet
 from monai.transforms import (
     Activations,
     AsDiscrete,
     Compose,
 )
 from monai.utils import set_determinism
-from tqdm import tqdm
 
 import torch
 from torch.utils.data import Subset
 
 from utils.dataset import BraTSDataset
 from utils.model import create_SegResNet, inference
-from utils.transforms import tumor_seg_transform
+from utils.transforms import tumor_seg_transform_2 as data_transform
 
 # print_config()
 
@@ -110,7 +105,7 @@ train_dataset = BraTSDataset(
     processed = USE_PROCESSED,
     section = 'training',
     seed = RANDOM_SEED,
-    transform = tumor_seg_transform['train']
+    transform = data_transform['train']
 )
 
 val_dataset = BraTSDataset(
@@ -118,7 +113,7 @@ val_dataset = BraTSDataset(
     processed = USE_PROCESSED,
     section = 'validation',
     seed = RANDOM_SEED,
-    transform = tumor_seg_transform['val']
+    transform = data_transform['val']
 )
 
 # TODO: add logic to get subset inside BraTSDataset
@@ -139,9 +134,9 @@ logger.debug(f"Length of data-loaders: {len(train_loader)}, {len(val_loader)}")
 
 # %%
 # Load masks
-mask_root_dir = "/scratch1/sachinsa/data/masks/brats2017"
-train_mask_df = pd.read_csv(os.path.join(mask_root_dir, "train_mask.csv"), index_col=0)
-val_mask_df = pd.read_csv(os.path.join(mask_root_dir, "val_mask.csv"), index_col=0)
+# mask_root_dir = "/scratch1/sachinsa/data/masks/brats2017"
+# train_mask_df = pd.read_csv(os.path.join(mask_root_dir, "train_mask.csv"), index_col=0)
+# val_mask_df = pd.read_csv(os.path.join(mask_root_dir, "val_mask.csv"), index_col=0)
 
 # %% [markdown]
 # ## Create Model, Loss, Optimizer
