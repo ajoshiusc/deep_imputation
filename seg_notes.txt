@@ -1,5 +1,64 @@
 TODO
 ----
+(after transform.py resize update)
+SLURM_JOB_ID = 27912235
+RUN_ID = 22
+USE_PROCESSED = False
+
+TODO
+----
+SLURM_JOB_ID = 27899966
+RUN_ID = 11
+USE_PROCESSED = True
+RANDOM_SEED = 0
+MAX_EPOCHS = 2000
+TRAIN_DATA_SIZE = None
+VAL_INTERVAL = 5
+
+ONGOING
+----
+brats_segmentation.py (after transform.py cropsize update)
+SLURM_JOB_ID = 27899956
+RUN_ID = 21
+USE_PROCESSED = False
+RANDOM_SEED = 0
+MAX_EPOCHS = 2000
+TRAIN_DATA_SIZE = None
+VAL_INTERVAL = 5
+
+ONGOING
+----
+brats_seg_1.py (after transform.py cropsize update)
+SLURM_JOB_ID = 27898536
+RUN_ID = 4
+TRAIN_DATA_SIZE = None
+BATCHSIZE_TRAIN = 2
+VAL_INTERVAL = 5
+RANDOM_SEED = 0
+
+ONGOING
+----
+brats_segmentation.py (code from 11/16/2024)
+this converges in training
+SLURM_JOB_ID = 27892172
+RUN_ID = 3
+TRAIN_DATA_SIZE = None
+BATCHSIZE_TRAIN = 2
+VAL_INTERVAL = 10
+RANDOM_SEED = 0
+
+ONGOING
+----
+brats_seg_1.py (before transform.py cropsize update)
+SLURM_JOB_ID = 27891641
+RUN_ID = 2
+TRAIN_DATA_SIZE = None
+BATCHSIZE_TRAIN = 2
+VAL_INTERVAL = 5
+RANDOM_SEED = 0
+
+COMPLETED
+----
 SLURM_JOB_ID = 27848864
 RUN_ID = 20
 USE_PROCESSED = False
@@ -8,7 +67,7 @@ MAX_EPOCHS = 2000
 TRAIN_DATA_SIZE = None
 VAL_INTERVAL = 5
 
-TODO
+COMPLETED
 ----
 SLURM_JOB_ID = 27872881 ~27848819~
 RUN_ID = 10
