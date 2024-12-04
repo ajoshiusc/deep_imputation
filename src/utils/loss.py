@@ -26,7 +26,7 @@ def gaussian_nll_loss(outputs, target):
 def mse_loss(outputs, target):
     return torch.nn.functional.mse_loss(outputs[:, :4, ...], target)
 
-def qr_loss(out, tgt, q0=0.5, q1=0.841, q2=0.159):
+def qr_loss(out, tgt, q0=0.5, q1=0.977, q2=0.023):
     out0 = out[:, :4, ...]
     out1 = out[:, 4:8, ...]
     out2 = out[:, 8:, ...]

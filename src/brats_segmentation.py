@@ -19,8 +19,9 @@ from utils.logger import Logger
 logger = Logger(log_level='DEBUG')
 
 # %%
-RUN_ID = 22
-USE_PROCESSED = False
+RUN_ID = 50
+USE_PROCESSED = True
+DO_MASK = False
 RANDOM_SEED = 0
 MAX_EPOCHS = 2000
 TRAIN_DATA_SIZE = None
@@ -30,7 +31,7 @@ ROOT_DIR = "/scratch1/sachinsa/brats_seg"
 DATA_ROOT_DIR = "/scratch1/sachinsa/data"
 
 # test code sanity (for silly errors)
-SANITY_CHECK = True
+SANITY_CHECK = False
 if SANITY_CHECK:
     RUN_ID = 0
     MAX_EPOCHS = 15
@@ -134,9 +135,9 @@ logger.debug(f"Length of data-loaders: {len(train_loader)}, {len(val_loader)}")
 
 # %%
 # Load masks
-# mask_root_dir = "/scratch1/sachinsa/data/masks/brats2017"
-# train_mask_df = pd.read_csv(os.path.join(mask_root_dir, "train_mask.csv"), index_col=0)
-# val_mask_df = pd.read_csv(os.path.join(mask_root_dir, "val_mask.csv"), index_col=0)
+mask_root_dir = "/scratch1/sachinsa/data/masks/brats2017"
+train_mask_df = pd.read_csv(os.path.join(mask_root_dir, "train_mask.csv"), index_col=0)
+val_mask_df = pd.read_csv(os.path.join(mask_root_dir, "val_mask.csv"), index_col=0)
 
 # %% [markdown]
 # ## Create Model, Loss, Optimizer
@@ -191,15 +192,19 @@ for epoch in range(1, MAX_EPOCHS+1):
     epoch_loss = 0
     step = 0
     step_start = time.time()
-    for batch_data in train_loader:
+    for train_data in train_loader:
         data_loaded_time = time.time() - step_start
         step += 1
-        train_inputs, train_labels = (
-            batch_data["image"].to(device),
-            batch_data["label"].to(device),
+        train_inputs, train_labels, train_ids= (
+            train_data["image"].to(device),
+            train_data["label"].to(device),
+            train_data["id"],
         )
+        train_mask = torch.from_numpy(train_mask_df.loc[train_ids.tolist(), :].values).to(device)
         if USE_PROCESSED:
             train_inputs = train_inputs[:, :4, ...]
+        if DO_MASK:
+            train_inputs = train_inputs*~train_mask[:,:,None,None,None]
         optimizer.zero_grad()
         with torch.amp.autocast('cuda'):
             train_outputs = model(train_inputs)
@@ -224,12 +229,16 @@ for epoch in range(1, MAX_EPOCHS+1):
         model.eval()
         with torch.no_grad():
             for val_data in val_loader:
-                val_inputs, val_labels = (
+                val_inputs, val_labels, val_ids = (
                     val_data["image"].to(device),
                     val_data["label"].to(device),
+                    val_data["id"],
                 )
+                val_mask = torch.from_numpy(val_mask_df.loc[val_ids.tolist(), :].values).to(device)
                 if USE_PROCESSED:
                     val_inputs = val_inputs[:, :4, ...]
+                if DO_MASK:
+                    val_inputs = val_inputs*~val_mask[:,:,None,None,None]
                 val_outputs = inference(val_inputs, model)
                 val_outputs = [post_trans(i) for i in decollate_batch(val_outputs)]
                 dice_metric(y_pred=val_outputs, y=val_labels)

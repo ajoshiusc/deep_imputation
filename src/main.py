@@ -24,7 +24,7 @@ logger = Logger(log_level='DEBUG')
 # * TRAIN_RATIO: proportion of total dataset to be used for training. Rest will be used for validating
 
 # %%
-RUN_ID = 22
+RUN_ID = 23
 QR_REGRESSION = True
 DO_MASK = True
 MAX_EPOCHS = 6000
@@ -87,7 +87,7 @@ from torch.utils.data import DataLoader, Subset
 
 from utils.dataset import BraTSDataset
 from utils.model import create_UNet3D, inference
-from utils.transforms import tumor_seg_transform
+from utils.transforms import contr_syn_transform_3
 
 # print_config()
 
@@ -116,14 +116,14 @@ train_dataset = BraTSDataset(
     version='2017',
     section = 'training',
     seed = RANDOM_SEED,
-    transform = tumor_seg_transform['train']
+    transform = contr_syn_transform_3['train']
 )
 
 val_dataset = BraTSDataset(
     version='2017',
     section = 'validation',
     seed = RANDOM_SEED,
-    transform = tumor_seg_transform['val']
+    transform = contr_syn_transform_3['val']
 )
 
 # TODO: add logic to get subset inside BraTSDataset
@@ -267,7 +267,8 @@ for epoch in range(ep_start, MAX_EPOCHS+1):
                 )
                 val_mask = torch.from_numpy(val_mask_df.loc[val_ids.tolist(), :].values).to(device)
                 val_target = val_inputs.clone()
-                val_inputs = val_inputs*~val_mask[:,:,None,None,None]
+                if DO_MASK:
+                    val_inputs = val_inputs*~val_mask[:,:,None,None,None]
                 val_outputs = inference(val_inputs, model)
                 val_output_main = val_outputs[:,:4,...]
                 mse_metric(y_pred=val_output_main, y=val_target)

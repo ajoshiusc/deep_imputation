@@ -156,6 +156,13 @@ contr_syn_transform_3 = {
             mode=("bilinear", "nearest"),
         ),
         NormalizeIntensityd(keys="image", nonzero=True, channel_wise=True),
+    ]),
+    'basic': Compose([
+        LoadImaged(keys=["image", "label"]),
+        EnsureChannelFirstd(keys="image"),
+        EnsureTyped(keys=["image", "label"]),
+        ConvertToMultiChannelBasedOnBratsClassesd(keys="label"),
+        Orientationd(keys=["image", "label"], axcodes="RAS"),
     ])
 }
 
@@ -217,17 +224,5 @@ tumor_seg_transform_2 = {
         RandScaleIntensityd(keys="image", factors=0.1, prob=1.0),
         RandShiftIntensityd(keys="image", offsets=0.1, prob=1.0),
     ]),
-    'val': Compose([
-        LoadImaged(keys=["image", "label"]),
-        EnsureChannelFirstd(keys="image"),
-        EnsureTyped(keys=["image", "label"]),
-        ConvertToMultiChannelBasedOnBratsClassesd(keys="label"),
-        Orientationd(keys=["image", "label"], axcodes="RAS"),
-        Spacingd(
-            keys=["image", "label"],
-            pixdim=(1.0, 1.0, 1.0),
-            mode=("bilinear", "nearest"),
-        ),
-        NormalizeIntensityd(keys="image", nonzero=True, channel_wise=True),
-    ])
+    'val': tumor_seg_transform['val']
 }
