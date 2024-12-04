@@ -1,11 +1,26 @@
-TODO
+COMPLETED
+----
+(with mixed data)
+SLURM_JOB_ID = 28077753
+RUN_ID = 50
+USE_PROCESSED = True
+DO_MASK = False
+
+COMPLETED
+----
+SLURM_JOB_ID = 27971610
+RUN_ID = 40
+USE_PROCESSED = False
+DO_MASK = True
+
+COMPLETED
 ----
 (after transform.py resize update)
-SLURM_JOB_ID = 27912235
+SLURM_JOB_ID = 27965844
 RUN_ID = 22
 USE_PROCESSED = False
 
-TODO
+COMPLETED
 ----
 SLURM_JOB_ID = 27899966
 RUN_ID = 11
@@ -15,7 +30,7 @@ MAX_EPOCHS = 2000
 TRAIN_DATA_SIZE = None
 VAL_INTERVAL = 5
 
-ONGOING
+COMPLETED
 ----
 brats_segmentation.py (after transform.py cropsize update)
 SLURM_JOB_ID = 27899956
@@ -26,7 +41,7 @@ MAX_EPOCHS = 2000
 TRAIN_DATA_SIZE = None
 VAL_INTERVAL = 5
 
-ONGOING
+COMPLETED
 ----
 brats_seg_1.py (after transform.py cropsize update)
 SLURM_JOB_ID = 27898536
@@ -36,7 +51,7 @@ BATCHSIZE_TRAIN = 2
 VAL_INTERVAL = 5
 RANDOM_SEED = 0
 
-ONGOING
+COMPLETED
 ----
 brats_segmentation.py (code from 11/16/2024)
 this converges in training
@@ -47,7 +62,7 @@ BATCHSIZE_TRAIN = 2
 VAL_INTERVAL = 10
 RANDOM_SEED = 0
 
-ONGOING
+COMPLETED
 ----
 brats_seg_1.py (before transform.py cropsize update)
 SLURM_JOB_ID = 27891641
