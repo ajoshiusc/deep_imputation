@@ -24,7 +24,7 @@ logger = Logger(log_level='DEBUG')
 # * TRAIN_RATIO: proportion of total dataset to be used for training. Rest will be used for validating
 
 # %%
-RUN_ID = 23
+RUN_ID = 24
 QR_REGRESSION = True
 DO_MASK = True
 MAX_EPOCHS = 6000
@@ -87,7 +87,7 @@ from torch.utils.data import DataLoader, Subset
 
 from utils.dataset import BraTSDataset
 from utils.model import create_UNet3D, inference
-from utils.transforms import contr_syn_transform_3
+from utils.transforms import contr_syn_transform_2  as data_transform
 
 # print_config()
 
@@ -116,14 +116,14 @@ train_dataset = BraTSDataset(
     version='2017',
     section = 'training',
     seed = RANDOM_SEED,
-    transform = contr_syn_transform_3['train']
+    transform = data_transform['train']
 )
 
 val_dataset = BraTSDataset(
     version='2017',
     section = 'validation',
     seed = RANDOM_SEED,
-    transform = contr_syn_transform_3['val']
+    transform = data_transform['val']
 )
 
 # TODO: add logic to get subset inside BraTSDataset

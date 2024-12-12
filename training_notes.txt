@@ -1,5 +1,15 @@
 TODO
 ----
+* Train with a larger RandSpatialCropd ROI to ensure it learns tumor regions well!!!
+SLURM_JOB_ID = 28318448
+RUN_ID = 24
+QR_PERCENTILES = [0.977,0.023] # 2 stds away (instead of [0.841,0.159])
+QR_REGRESSION = True
+DO_MASK = True
+TRAIN_DATA_SIZE = 200
+
+COMPLETED
+----
 SLURM_JOB_ID = 28080506
 RUN_ID = 23
 QR_PERCENTILES = [0.977,0.023] # 2 stds away (instead of [0.841,0.159])

@@ -1,3 +1,20 @@
+TODO
+----
+(new data from run_24)
+SLURM_JOB_ID = 
+RUN_ID = 70
+USE_PROCESSED = True
+ONLY_MEDIAN = True
+
+COMPLETED
+----
+(used q2 and q3 in addition to median)
+SLURM_JOB_ID = 28167844
+RUN_ID = 60
+USE_PROCESSED = True
+DO_MASK = False
+ONLY_MEDIAN = False
+
 COMPLETED
 ----
 (with mixed data)
