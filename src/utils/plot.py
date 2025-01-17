@@ -37,19 +37,20 @@ def tensor_clamp(tensor, low=0.01, hi=0.99):
 def background_standardize(tensor):
     max_ = tensor.max().item()
     min_ = tensor.min().item()
-    tensor[torch.abs(tensor) <  0.03] = (max_+min_)/2
+    tensor[torch.abs(tensor) <  0.03] = min_ # (max_+min_)/2
     return tensor
 
 class BrainPlot():
-    def __init__(self, input_image, output_image, input_mask, clamp_vis=True):
+    def __init__(self, input_image, output_image, input_mask, id, h_index=None, clamp_vis=True):
         self.input_image = input_image
         self.output_image = output_image
         self.input_mask = input_mask
+        self.id = id
         im_shape = input_image.shape[2:]
         self.im_length = im_shape[0]
         self.im_width = im_shape[1]
         self.im_height = im_shape[2]
-        self.h_index = self.im_height//2
+        self.h_index = h_index if h_index is not None else self.im_height//2
         self.clamp_vis = clamp_vis
         self.channels = ["FLAIR", "T1w", "T1Gd", "T2w"]
         self.num_channels = len(self.channels)
@@ -69,8 +70,8 @@ class BrainPlot():
             row_title = "Output: \n" + "Median"
             brain_slice = this_output_sub[index]
         elif key == "q1":
-            row_title = "Output: \n" + r"qH-qL" + ""
-            brain_slice = 0.5*(this_output_sub[index+2*nc] - this_output_sub[index+1*nc])
+            row_title = "Output: \n" + r"qL" + ""
+            brain_slice = this_output_sub[index+1*nc]
         elif key == "q2":
             row_title = "Output: \n" + r"qH" + ""
             brain_slice = this_output_sub[index+2*nc]
@@ -92,19 +93,22 @@ class BrainPlot():
         if key == "input":
             plt.title(col_title, fontsize=30, color=col_color)
         brain_slice = brain_slice.detach().cpu().T
+        brain_slice = torch.flip(brain_slice, dims=[0]) # flip horizontally
 
         if brain_slice.dtype != torch.bool:
             if self.clamp_vis:
                 brain_slice = tensor_clamp(brain_slice)
             brain_slice = background_standardize(brain_slice)
-            
+
         plt.imshow(brain_slice, cmap="gray")
 
         plt.xlabel('')
         if index == 0:
             plt.ylabel(row_title, fontsize=30)
 
+        plt.suptitle(f"BRATS_{self.id} (h={self.h_index}/{self.im_height})", fontsize=20)
         plt.xticks([self.im_width - 1], [self.im_width], fontsize=15)
         plt.yticks([self.im_length - 1], [self.im_length], fontsize=15)
+        plt.tight_layout()
         cbar = plt.colorbar(shrink=0.7)
         cbar.ax.tick_params(labelsize=20)

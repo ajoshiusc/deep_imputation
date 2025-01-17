@@ -16,7 +16,7 @@ DATA_PATH = {
 }
 
 PROCESSED_DATA_PATH = {
-    'BraTS_2017': '/scratch1/sachinsa/data/contr_generated/run_22_mixed'
+    'BraTS_2017': '/scratch1/sachinsa/data/contr_generated/run_24'
 }
 
 # TODO: Study MONAI DecathloanDataset and CacheDataset class to improve this class

@@ -3,6 +3,9 @@
 figs/
 logs/
 
+# Files beginning with underscore
+_*
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

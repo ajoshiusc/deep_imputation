@@ -19,8 +19,9 @@ from utils.logger import Logger
 logger = Logger(log_level='DEBUG')
 
 # %%
-RUN_ID = 50
+RUN_ID = 71
 USE_PROCESSED = True
+ONLY_MEDIAN = False
 DO_MASK = False
 RANDOM_SEED = 0
 MAX_EPOCHS = 2000
@@ -34,9 +35,9 @@ DATA_ROOT_DIR = "/scratch1/sachinsa/data"
 SANITY_CHECK = False
 if SANITY_CHECK:
     RUN_ID = 0
-    MAX_EPOCHS = 15
-    TRAIN_DATA_SIZE = 10
-    VAL_INTERVAL = 2
+    MAX_EPOCHS = 2
+    TRAIN_DATA_SIZE = 6
+    VAL_INTERVAL = 1
 
 logger.info("PARAMETERS\n-----------------")
 logger.info(f"RUN_ID: {RUN_ID}")
@@ -76,7 +77,7 @@ from torch.utils.data import Subset
 
 from utils.dataset import BraTSDataset
 from utils.model import create_SegResNet, inference
-from utils.transforms import tumor_seg_transform_2 as data_transform
+from utils.transforms import tumor_seg_transform_3 as data_transform
 
 # print_config()
 
@@ -147,7 +148,8 @@ val_mask_df = pd.read_csv(os.path.join(mask_root_dir, "val_mask.csv"), index_col
 
 # %%
 device = torch.device("cuda:0")
-model = create_SegResNet(device)
+in_channels = 4 if ONLY_MEDIAN else 12
+model = create_SegResNet(in_channels, device)
 logger.debug("Model defined")
 
 # %%
@@ -201,7 +203,7 @@ for epoch in range(1, MAX_EPOCHS+1):
             train_data["id"],
         )
         train_mask = torch.from_numpy(train_mask_df.loc[train_ids.tolist(), :].values).to(device)
-        if USE_PROCESSED:
+        if USE_PROCESSED and ONLY_MEDIAN:
             train_inputs = train_inputs[:, :4, ...]
         if DO_MASK:
             train_inputs = train_inputs*~train_mask[:,:,None,None,None]
@@ -235,7 +237,7 @@ for epoch in range(1, MAX_EPOCHS+1):
                     val_data["id"],
                 )
                 val_mask = torch.from_numpy(val_mask_df.loc[val_ids.tolist(), :].values).to(device)
-                if USE_PROCESSED:
+                if USE_PROCESSED and ONLY_MEDIAN:
                     val_inputs = val_inputs[:, :4, ...]
                 if DO_MASK:
                     val_inputs = val_inputs*~val_mask[:,:,None,None,None]
