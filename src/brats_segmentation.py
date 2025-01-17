@@ -19,9 +19,9 @@ from utils.logger import Logger
 logger = Logger(log_level='DEBUG')
 
 # %%
-RUN_ID = 70
+RUN_ID = 71
 USE_PROCESSED = True
-ONLY_MEDIAN = True
+ONLY_MEDIAN = False
 DO_MASK = False
 RANDOM_SEED = 0
 MAX_EPOCHS = 2000

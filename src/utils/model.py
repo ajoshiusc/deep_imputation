@@ -12,15 +12,15 @@ def create_UNet3D(out_channels, device, verbose=False):
         strides=(2, 2),
         num_res_units=2
     ).to(device)
-    # Calculate and display the total number of parameters
-    def count_parameters(model):
-        return sum(p.numel() for p in model.parameters() if p.requires_grad)
+    # # Calculate and display the total number of parameters
+    # def count_parameters(model):
+    #     return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
-    total_params = count_parameters(model)
-    print(f"Total number of trainable parameters: {total_params}")
+    # total_params = count_parameters(model)
+    # print(f"Total number of trainable parameters: {total_params}")
 
-    # Print the model architecture
-    print(f"Model Architecture:\n {model}")
+    # # Print the model architecture
+    # print(f"Model Architecture:\n {model}")
     return model
 
 def create_SegResNet(in_channels, device):
