@@ -24,7 +24,7 @@ logger = Logger(log_level='DEBUG')
 # * TRAIN_RATIO: proportion of total dataset to be used for training. Rest will be used for validating
 
 # %%
-RUN_ID = 24
+RUN_ID = 25
 QR_REGRESSION = True
 DO_MASK = True
 MAX_EPOCHS = 6000
