@@ -19,7 +19,7 @@ from utils.logger import Logger
 logger = Logger(log_level='DEBUG')
 
 # %%
-RUN_ID = 80
+RUN_ID = 87
 # USE_PROCESSED = True
 # ONLY_MEDIAN = True
 # DO_MASK = False
@@ -81,7 +81,7 @@ from torch.utils.data import Subset
 
 from utils.dataset import BraTSDataset
 from utils.model import create_SegResNet, inference
-from utils.transforms import tumor_seg_transform_3 as data_transform
+from utils.transforms import tumor_seg_transform as data_transform
 
 from itertools import chain, combinations
 

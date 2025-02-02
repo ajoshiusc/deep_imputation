@@ -4,6 +4,7 @@ from monai.transforms import (
     LoadImaged,
     MapTransform,
     NormalizeIntensityd,
+    ScaleIntensityd,
     Orientationd,
     RandFlipd,
     RandScaleIntensityd,
@@ -202,4 +203,22 @@ tumor_seg_transform_3 = {
         RandShiftIntensityd(keys="image", offsets=0.1, prob=1.0),
     ]),
     'val': tumor_seg_transform['val']
+}
+
+
+tumor_seg_transform_4 = {
+    'train':  tumor_seg_transform['train'],
+    'val': Compose([
+        LoadImaged(keys=["image", "label"]),
+        EnsureChannelFirstd(keys="image"),
+        EnsureTyped(keys=["image", "label"]),
+        ConvertToMultiChannelBasedOnBratsClassesd(keys="label"),
+        Orientationd(keys=["image", "label"], axcodes="RAS"),
+        Spacingd(
+            keys=["image", "label"],
+            pixdim=(1.0, 1.0, 1.0),
+            mode=("bilinear", "nearest"),
+        ),
+        ScaleIntensityd(keys="image", minv=0, maxv=1, channel_wise=True),
+    ])
 }

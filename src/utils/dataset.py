@@ -19,11 +19,15 @@ PROCESSED_DATA_PATH = {
     'BraTS_2017': '/scratch1/sachinsa/data/contr_generated/run_24'
 }
 
+T1GD_DATA_PATH = {
+    'BraTS_2017': '/scratch1/sachinsa/data/contr_generated/run_32'
+}
+
 # TODO: Study MONAI DecathloanDataset and CacheDataset class to improve this class
 class BraTSDataset(Dataset):
-    def __init__(self, version, processed=False, section='training', train_ratio=0.8, transform=None, seed=0, has_mask=True, has_label=True):
+    def __init__(self, version, processed=False, section='training', train_ratio=0.8, transform=None, seed=0, has_mask=True, has_label=True, load_t1gd=False):
         self.version = version
-        self.processed = processed
+        self.processed = processed or load_t1gd
         self.root_dir = DATA_PATH[f'BraTS_{version}']
         np.random.seed(seed)
 
@@ -33,6 +37,8 @@ class BraTSDataset(Dataset):
             self._prune()
             if processed:
                 self.processed_root_dir = PROCESSED_DATA_PATH[f'BraTS_{version}']
+            if load_t1gd:
+                self.processed_root_dir = T1GD_DATA_PATH[f'BraTS_{version}']
         else:
             print(f'Invalid version: {version}')
             return
