@@ -19,10 +19,11 @@ from utils.logger import Logger
 logger = Logger(log_level='DEBUG')
 
 # %%
-RUN_ID = 71
-USE_PROCESSED = True
-ONLY_MEDIAN = False
-DO_MASK = False
+RUN_ID = 80
+# USE_PROCESSED = True
+# ONLY_MEDIAN = True
+# DO_MASK = False
+MASK_CODE = RUN_ID - 80
 RANDOM_SEED = 0
 MAX_EPOCHS = 2000
 TRAIN_DATA_SIZE = None
@@ -41,7 +42,10 @@ if SANITY_CHECK:
 
 logger.info("PARAMETERS\n-----------------")
 logger.info(f"RUN_ID: {RUN_ID}")
-logger.info(f"USE_PROCESSED: {USE_PROCESSED}")
+# logger.info(f"USE_PROCESSED: {USE_PROCESSED}")
+# logger.info(f"ONLY_MEDIAN: {ONLY_MEDIAN}")
+# logger.info(f"DO_MASK: {DO_MASK}")
+logger.info(f"MASK_CODE: {MASK_CODE}")
 logger.info(f"MAX_EPOCHS: {MAX_EPOCHS}")
 logger.info(f"TRAIN_DATA_SIZE: {TRAIN_DATA_SIZE}")
 logger.info(f"BATCHSIZE_TRAIN: {BATCHSIZE_TRAIN}")
@@ -79,6 +83,8 @@ from utils.dataset import BraTSDataset
 from utils.model import create_SegResNet, inference
 from utils.transforms import tumor_seg_transform_3 as data_transform
 
+from itertools import chain, combinations
+
 # print_config()
 
 # %%
@@ -104,7 +110,7 @@ set_determinism(seed=RANDOM_SEED)
 # %%
 train_dataset = BraTSDataset(
     version='2017',
-    processed = USE_PROCESSED,
+    # processed = USE_PROCESSED,
     section = 'training',
     seed = RANDOM_SEED,
     transform = data_transform['train']
@@ -112,7 +118,7 @@ train_dataset = BraTSDataset(
 
 val_dataset = BraTSDataset(
     version='2017',
-    processed = USE_PROCESSED,
+    # processed = USE_PROCESSED,
     section = 'validation',
     seed = RANDOM_SEED,
     transform = data_transform['val']
@@ -135,10 +141,22 @@ logger.debug(f"Batch-size: {BATCHSIZE_TRAIN}, {BATCHSIZE_VAL}")
 logger.debug(f"Length of data-loaders: {len(train_loader)}, {len(val_loader)}")
 
 # %%
-# Load masks
-mask_root_dir = "/scratch1/sachinsa/data/masks/brats2017"
-train_mask_df = pd.read_csv(os.path.join(mask_root_dir, "train_mask.csv"), index_col=0)
-val_mask_df = pd.read_csv(os.path.join(mask_root_dir, "val_mask.csv"), index_col=0)
+# # Load masks
+# mask_root_dir = "/scratch1/sachinsa/data/masks/brats2017"
+# train_mask_df = pd.read_csv(os.path.join(mask_root_dir, "train_mask.csv"), index_col=0)
+# val_mask_df = pd.read_csv(os.path.join(mask_root_dir, "val_mask.csv"), index_col=0)
+
+# %%
+def all_subsets(arr):
+    subsets = list(chain.from_iterable(combinations(arr, r) for r in range(0, len(arr))))
+    return [list(subset) for subset in subsets]
+
+mask_indices = all_subsets([0, 1, 2, 3])[MASK_CODE]
+show_indices = [x for x in [0, 1, 2, 3] if x not in mask_indices]
+channels = ["FLAIR", "T1w", "T1Gd", "T2w"]
+label_list = ["TC", "WT", "ET"]
+
+logger.info(f"Masked contrasts: {[channels[i] for i in mask_indices]}")
 
 # %% [markdown]
 # ## Create Model, Loss, Optimizer
@@ -148,7 +166,7 @@ val_mask_df = pd.read_csv(os.path.join(mask_root_dir, "val_mask.csv"), index_col
 
 # %%
 device = torch.device("cuda:0")
-in_channels = 4 if ONLY_MEDIAN else 12
+in_channels = len(show_indices)
 model = create_SegResNet(in_channels, device)
 logger.debug("Model defined")
 
@@ -202,11 +220,11 @@ for epoch in range(1, MAX_EPOCHS+1):
             train_data["label"].to(device),
             train_data["id"],
         )
-        train_mask = torch.from_numpy(train_mask_df.loc[train_ids.tolist(), :].values).to(device)
-        if USE_PROCESSED and ONLY_MEDIAN:
-            train_inputs = train_inputs[:, :4, ...]
-        if DO_MASK:
-            train_inputs = train_inputs*~train_mask[:,:,None,None,None]
+        # train_mask = torch.from_numpy(train_mask_df.loc[train_ids.tolist(), :].values).to(device)
+        # if USE_PROCESSED and ONLY_MEDIAN:
+        #     train_inputs = train_inputs[:, :4, ...]
+        # if DO_MASK:
+        train_inputs = train_inputs[:, show_indices, ...]
         optimizer.zero_grad()
         with torch.amp.autocast('cuda'):
             train_outputs = model(train_inputs)
@@ -236,11 +254,11 @@ for epoch in range(1, MAX_EPOCHS+1):
                     val_data["label"].to(device),
                     val_data["id"],
                 )
-                val_mask = torch.from_numpy(val_mask_df.loc[val_ids.tolist(), :].values).to(device)
-                if USE_PROCESSED and ONLY_MEDIAN:
-                    val_inputs = val_inputs[:, :4, ...]
-                if DO_MASK:
-                    val_inputs = val_inputs*~val_mask[:,:,None,None,None]
+                # val_mask = torch.from_numpy(val_mask_df.loc[val_ids.tolist(), :].values).to(device)
+                # if USE_PROCESSED and ONLY_MEDIAN:
+                #     val_inputs = val_inputs[:, :4, ...]
+                # if DO_MASK:
+                val_inputs = val_inputs[:, show_indices, ...]
                 val_outputs = inference(val_inputs, model)
                 val_outputs = [post_trans(i) for i in decollate_batch(val_outputs)]
                 dice_metric(y_pred=val_outputs, y=val_labels)
