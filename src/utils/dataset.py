@@ -64,12 +64,13 @@ class BraTSDataset(Dataset):
         return len(self.ids)
 
     def __getitem__(self, index):
-        imagePath = os.path.normpath(os.path.join(self.root_dir,self.properties['training'][index]['image']))
+        # imagePath = os.path.normpath(os.path.join(self.root_dir,self.properties['training'][index]['image']))
+        imagePath = os.path.normpath(os.path.join(self.root_dir,'imagesTr',f'BRATS_{self.ids[index]:03d}.nii.gz'))
         if self.processed:
-            imagePath = os.path.normpath(os.path.join(self.processed_root_dir,f'BRATS_{self.ids[index]}.nii.gz'))
+            imagePath = os.path.normpath(os.path.join(self.processed_root_dir,f'BRATS_{self.ids[index]:03d}.nii.gz'))
         filepath = {
             "image": imagePath,
-            "label": os.path.normpath(os.path.join(self.root_dir,self.properties['training'][index]['label']))
+            "label": os.path.normpath(os.path.join(self.root_dir,'labelsTr',f'BRATS_{self.ids[index]:03d}.nii.gz'))
         }
         image_dict = self.transform(filepath)
 

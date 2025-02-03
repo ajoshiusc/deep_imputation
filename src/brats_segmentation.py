@@ -19,11 +19,8 @@ from utils.logger import Logger
 logger = Logger(log_level='DEBUG')
 
 # %%
-RUN_ID = 87
-# USE_PROCESSED = True
-# ONLY_MEDIAN = True
-# DO_MASK = False
-MASK_CODE = RUN_ID - 80
+RUN_ID = 20
+MASK_CODE = RUN_ID - 20
 RANDOM_SEED = 0
 MAX_EPOCHS = 2000
 TRAIN_DATA_SIZE = None
@@ -42,9 +39,6 @@ if SANITY_CHECK:
 
 logger.info("PARAMETERS\n-----------------")
 logger.info(f"RUN_ID: {RUN_ID}")
-# logger.info(f"USE_PROCESSED: {USE_PROCESSED}")
-# logger.info(f"ONLY_MEDIAN: {ONLY_MEDIAN}")
-# logger.info(f"DO_MASK: {DO_MASK}")
 logger.info(f"MASK_CODE: {MASK_CODE}")
 logger.info(f"MAX_EPOCHS: {MAX_EPOCHS}")
 logger.info(f"TRAIN_DATA_SIZE: {TRAIN_DATA_SIZE}")
@@ -81,7 +75,7 @@ from torch.utils.data import Subset
 
 from utils.dataset import BraTSDataset
 from utils.model import create_SegResNet, inference
-from utils.transforms import tumor_seg_transform as data_transform
+from utils.transforms import tumor_seg_transform_3 as data_transform
 
 from itertools import chain, combinations
 
@@ -110,16 +104,16 @@ set_determinism(seed=RANDOM_SEED)
 # %%
 train_dataset = BraTSDataset(
     version='2017',
-    # processed = USE_PROCESSED,
     section = 'training',
+    load_t1gd = True,
     seed = RANDOM_SEED,
     transform = data_transform['train']
 )
 
 val_dataset = BraTSDataset(
     version='2017',
-    # processed = USE_PROCESSED,
     section = 'validation',
+    load_t1gd = True,
     seed = RANDOM_SEED,
     transform = data_transform['val']
 )
@@ -132,19 +126,13 @@ if TRAIN_DATA_SIZE:
 BATCHSIZE_VAL = BATCHSIZE_TRAIN
 
 # Create data loaders
-train_loader = DataLoader(train_dataset, batch_size=BATCHSIZE_TRAIN, shuffle=True, num_workers=8)
+train_loader = DataLoader(train_dataset, batch_size=BATCHSIZE_TRAIN, shuffle=False, num_workers=8)
 val_loader = DataLoader(val_dataset, batch_size=BATCHSIZE_VAL, shuffle=False, num_workers=8)
 
 logger.debug("Data loaded")
 logger.debug(f"Length of dataset: {len(train_dataset)}, {len(val_dataset)}")
 logger.debug(f"Batch-size: {BATCHSIZE_TRAIN}, {BATCHSIZE_VAL}")
 logger.debug(f"Length of data-loaders: {len(train_loader)}, {len(val_loader)}")
-
-# %%
-# # Load masks
-# mask_root_dir = "/scratch1/sachinsa/data/masks/brats2017"
-# train_mask_df = pd.read_csv(os.path.join(mask_root_dir, "train_mask.csv"), index_col=0)
-# val_mask_df = pd.read_csv(os.path.join(mask_root_dir, "val_mask.csv"), index_col=0)
 
 # %%
 def all_subsets(arr):
@@ -220,11 +208,7 @@ for epoch in range(1, MAX_EPOCHS+1):
             train_data["label"].to(device),
             train_data["id"],
         )
-        # train_mask = torch.from_numpy(train_mask_df.loc[train_ids.tolist(), :].values).to(device)
-        # if USE_PROCESSED and ONLY_MEDIAN:
-        #     train_inputs = train_inputs[:, :4, ...]
-        # if DO_MASK:
-        train_inputs = train_inputs[:, show_indices, ...]
+        
         optimizer.zero_grad()
         with torch.amp.autocast('cuda'):
             train_outputs = model(train_inputs)
@@ -254,11 +238,7 @@ for epoch in range(1, MAX_EPOCHS+1):
                     val_data["label"].to(device),
                     val_data["id"],
                 )
-                # val_mask = torch.from_numpy(val_mask_df.loc[val_ids.tolist(), :].values).to(device)
-                # if USE_PROCESSED and ONLY_MEDIAN:
-                #     val_inputs = val_inputs[:, :4, ...]
-                # if DO_MASK:
-                val_inputs = val_inputs[:, show_indices, ...]
+
                 val_outputs = inference(val_inputs, model)
                 val_outputs = [post_trans(i) for i in decollate_batch(val_outputs)]
                 dice_metric(y_pred=val_outputs, y=val_labels)
