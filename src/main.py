@@ -24,8 +24,9 @@ logger = Logger(log_level='DEBUG')
 # * TRAIN_RATIO: proportion of total dataset to be used for training. Rest will be used for validating
 
 # %%
-RUN_ID = 24
-QR_REGRESSION = True
+RUN_ID = 32
+INPUT_MODALITY = "T1_T2_FLAIR"
+QR_REGRESSION = False
 DO_MASK = True
 MAX_EPOCHS = 6000
 TRAIN_DATA_SIZE = 200
@@ -40,7 +41,7 @@ ROOT_DIR = "/scratch1/sachinsa/cont_syn"
 SANITY_CHECK = False
 if SANITY_CHECK:
     RUN_ID = 0
-    MAX_EPOCHS = 15
+    MAX_EPOCHS = 10
     TRAIN_DATA_SIZE = 10
     VAL_INTERVAL = 2
 
@@ -54,6 +55,7 @@ params = {
 
 logger.info("PARAMETERS\n-----------------")
 logger.info(f"RUN_ID: {RUN_ID}")
+logger.info(f"INPUT_MODALITY: {INPUT_MODALITY}")
 logger.info(f"QR_REGRESSION: {QR_REGRESSION}")
 logger.info(f"DO_MASK: {DO_MASK}")
 logger.info(f"MAX_EPOCHS: {MAX_EPOCHS}")
@@ -152,13 +154,22 @@ val_mask_df = pd.read_csv(os.path.join(mask_root_dir, "val_mask.csv"), index_col
 # %% [markdown]
 # ## Create Model, Loss, Optimizer
 
+# %%
+input_filter = []
+if INPUT_MODALITY == "ONLY_T1":
+    input_filter = [1]
+elif INPUT_MODALITY == "T1_T2":
+    input_filter = [1,3]
+elif INPUT_MODALITY == "T1_T2_FLAIR":
+    input_filter = [0,1,3]
+
 # %% [markdown]
 # **Define a 3D Unet**
 
 # %%
 device = torch.device("cuda:0")
-out_channels = 12 if QR_REGRESSION else 8
-model = create_UNet3D(out_channels, device)
+out_channels = 1
+model = create_UNet3D(len(input_filter), out_channels, device)
 logger.debug("Model defined")
 
 # %%
@@ -192,10 +203,7 @@ def loss_scheduler(epoch):
     if QR_REGRESSION:
         return qr_loss
     else:
-        if 500 < epoch < 600:
-            return mse_loss
-        else:
-            return gaussian_nll_loss
+        return mse_loss
 
 # %%
 mse_metric = MSEMetric(reduction="mean")
@@ -230,13 +238,11 @@ for epoch in range(ep_start, MAX_EPOCHS+1):
             train_data["image"].to(device),
             train_data["id"],
         )
-        train_mask = torch.from_numpy(train_mask_df.loc[train_ids.tolist(), :].values).to(device)
         optimizer.zero_grad()
         with torch.amp.autocast('cuda'):
-            target = train_inputs.clone()
-            if DO_MASK:
-                train_inputs = train_inputs*~train_mask[:,:,None,None,None]
-            train_outputs = model(train_inputs)            
+            target = train_inputs.clone()[:, [2], ...] # T1Gd
+            train_inputs = train_inputs[:,input_filter, ...]
+            train_outputs = model(train_inputs)
             loss = criterion(train_outputs, target)
         scaler.scale(loss).backward()
         scaler.step(optimizer)
@@ -265,13 +271,10 @@ for epoch in range(ep_start, MAX_EPOCHS+1):
                     val_data["image"].to(device),
                     val_data["id"],
                 )
-                val_mask = torch.from_numpy(val_mask_df.loc[val_ids.tolist(), :].values).to(device)
-                val_target = val_inputs.clone()
-                if DO_MASK:
-                    val_inputs = val_inputs*~val_mask[:,:,None,None,None]
+                val_target = val_inputs.clone()[:, [2], ...] # T1Gd
+                val_inputs = val_inputs[:,input_filter, ...]
                 val_outputs = inference(val_inputs, model)
-                val_output_main = val_outputs[:,:4,...]
-                mse_metric(y_pred=val_output_main, y=val_target)
+                mse_metric(y_pred=val_outputs, y=val_target)
 
             metric = 1-mse_metric.aggregate().item()
             metric_values.append(metric)

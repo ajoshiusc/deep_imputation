@@ -2,11 +2,11 @@ from monai.networks.nets import UNet, SegResNet
 from monai.inferers import sliding_window_inference
 import torch
 
-def create_UNet3D(out_channels, device, verbose=False):
+def create_UNet3D(in_channels, out_channels, device, verbose=False):
     # TODO: finetune model parameters
     model = UNet(
         spatial_dims=3, # 3D
-        in_channels=4,
+        in_channels=in_channels,
         out_channels=out_channels,
         channels=(4, 8, 16),
         strides=(2, 2),

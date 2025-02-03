@@ -40,6 +40,21 @@ def background_standardize(tensor):
     tensor[torch.abs(tensor) <  0.03] = min_ # (max_+min_)/2
     return tensor
 
+def brain_plot(img, channels = ["FLAIR", "T1w", "T1Gd", "T2w"], h_index=77):
+    num_channels = len(channels)
+    fig, axes = plt.subplots(num_channels, 1, figsize=(3*num_channels, 2*num_channels), constrained_layout=True)
+    axes = np.atleast_1d(axes)
+
+    for i in range(num_channels):
+        axes[i].set_title(channels[i])
+        brain_slice = img[0, i, :, :, h_index].detach().cpu().T
+        print(f"sum: {brain_slice.sum().item()}")
+        im = axes[i].imshow(brain_slice, cmap="gray")
+        fig.colorbar(im, ax=axes[i])
+        axes[i].set_xticks([])
+        axes[i].set_yticks([])
+    plt.show()
+
 class BrainPlot():
     def __init__(self, input_image, output_image, input_mask, id, h_index=None, clamp_vis=True):
         self.input_image = input_image
