@@ -17,7 +17,7 @@ def plot_donut(value, title, color, ax):
     active_segment = Wedge((0, 0), radius, 0, angle, width=radius - inner_radius, color=color)
     ax.add_patch(active_segment)
 
-    ax.text(0, 0, f"{value:.0%}", ha="center", va="center", fontsize=20, color="black")
+    ax.text(0, 0, f"{value:.1%}", ha="center", va="center", fontsize=20, color="black")
     ax.text(0, 0.85, title, ha="center", va="center", fontsize=20, color="black")
     ax.set_xticks([])
     ax.set_yticks([])
@@ -127,3 +127,46 @@ class BrainPlot():
         plt.tight_layout()
         cbar = plt.colorbar(shrink=0.7)
         cbar.ax.tick_params(labelsize=20)
+
+
+def plot_training_tumor_seg(epoch_loss_values, metric_values, metric_values_tc, metric_values_wt, metric_values_et, val_interval):
+    plt.figure("train", (12, 4))
+    plt.subplot(1, 2, 1)
+    plt.title("Epoch Average Loss")
+    x = [i + 1 for i in range(len(epoch_loss_values))]
+    y = epoch_loss_values
+    plt.xlabel("epoch")
+    plt.ylim((0, 1))
+    plt.plot(x, y, color="red")
+    plt.subplot(1, 2, 2)
+    plt.title("Val Mean Dice")
+    x = [val_interval * (i + 1) for i in range(len(metric_values))]
+    y = metric_values
+    plt.xlabel("epoch")
+    plt.ylim((0, 1))
+    plt.plot(x, y, color="green")
+    plt.show()
+
+    plt.figure("train", (18, 4))
+    plt.subplot(1, 3, 1)
+    plt.title("Val Mean Dice TC")
+    x = [val_interval * (i + 1) for i in range(len(metric_values_tc))]
+    y = metric_values_tc
+    plt.xlabel("epoch")
+    plt.ylim((0, 1))
+    plt.plot(x, y, color="blue")
+    plt.subplot(1, 3, 2)
+    plt.title("Val Mean Dice WT")
+    x = [val_interval * (i + 1) for i in range(len(metric_values_wt))]
+    y = metric_values_wt
+    plt.xlabel("epoch")
+    plt.ylim((0, 1))
+    plt.plot(x, y, color="brown")
+    plt.subplot(1, 3, 3)
+    plt.title("Val Mean Dice ET")
+    x = [val_interval * (i + 1) for i in range(len(metric_values_et))]
+    y = metric_values_et
+    plt.xlabel("epoch")
+    plt.ylim((0, 1))
+    plt.plot(x, y, color="purple")
+    plt.show()

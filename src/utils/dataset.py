@@ -16,7 +16,11 @@ DATA_PATH = {
 }
 
 PROCESSED_DATA_PATH = {
-    'BraTS_2017': '/scratch1/sachinsa/data/contr_generated/run_24'
+    'BraTS_2017': '/scratch1/sachinsa/data/contr_generated/run_40'
+}
+
+T1GD_DATA_PATH = {
+    'BraTS_2017': '/scratch1/sachinsa/data/contr_generated/run_32'
 }
 
 T1GD_DATA_PATH = {

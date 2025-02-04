@@ -19,8 +19,8 @@ from utils.logger import Logger
 logger = Logger(log_level='DEBUG')
 
 # %%
-RUN_ID = 20
-MASK_CODE = RUN_ID - 20
+RUN_ID = 40
+MASK_CODE = 0 #RUN_ID - 20
 RANDOM_SEED = 0
 MAX_EPOCHS = 2000
 TRAIN_DATA_SIZE = None
@@ -105,7 +105,7 @@ set_determinism(seed=RANDOM_SEED)
 train_dataset = BraTSDataset(
     version='2017',
     section = 'training',
-    load_t1gd = True,
+    processed = True,
     seed = RANDOM_SEED,
     transform = data_transform['train']
 )
@@ -113,7 +113,7 @@ train_dataset = BraTSDataset(
 val_dataset = BraTSDataset(
     version='2017',
     section = 'validation',
-    load_t1gd = True,
+    processed = True,
     seed = RANDOM_SEED,
     transform = data_transform['val']
 )
@@ -126,7 +126,7 @@ if TRAIN_DATA_SIZE:
 BATCHSIZE_VAL = BATCHSIZE_TRAIN
 
 # Create data loaders
-train_loader = DataLoader(train_dataset, batch_size=BATCHSIZE_TRAIN, shuffle=False, num_workers=8)
+train_loader = DataLoader(train_dataset, batch_size=BATCHSIZE_TRAIN, shuffle=True, num_workers=8)
 val_loader = DataLoader(val_dataset, batch_size=BATCHSIZE_VAL, shuffle=False, num_workers=8)
 
 logger.debug("Data loaded")
