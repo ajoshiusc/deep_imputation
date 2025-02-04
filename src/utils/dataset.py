@@ -15,13 +15,9 @@ DATA_PATH = {
     'BraTS_2017': '/scratch1/sachinsa/data/Task01_BrainTumour',
 }
 
-PROCESSED_DATA_PATH = {
-    'BraTS_2017': '/scratch1/sachinsa/data/contr_generated/run_40'
-}
-
-T1GD_DATA_PATH = {
-    'BraTS_2017': '/scratch1/sachinsa/data/contr_generated/run_32'
-}
+# PROCESSED_DATA_PATH = {
+#     'BraTS_2017': '/scratch1/sachinsa/data/contr_generated/run_40'
+# }
 
 T1GD_DATA_PATH = {
     'BraTS_2017': '/scratch1/sachinsa/data/contr_generated/run_32'
