@@ -1,5 +1,7 @@
 from monai.networks.nets import UNet, SegResNet
 from monai.inferers import sliding_window_inference
+from torchinfo import summary
+# from torchsummary import summary
 import torch
 
 def create_UNet3D(in_channels, out_channels, device, verbose=False):
@@ -12,15 +14,19 @@ def create_UNet3D(in_channels, out_channels, device, verbose=False):
         strides=(2, 2),
         num_res_units=2
     ).to(device)
-    # # Calculate and display the total number of parameters
-    # def count_parameters(model):
-    #     return sum(p.numel() for p in model.parameters() if p.requires_grad)
+    if verbose:
+        # Calculate and display the total number of parameters
+        def count_parameters(model):
+            return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
-    # total_params = count_parameters(model)
-    # print(f"Total number of trainable parameters: {total_params}")
+        total_params = count_parameters(model)
+        print(f"Total number of trainable parameters: {total_params}")
 
-    # # Print the model architecture
-    # print(f"Model Architecture:\n {model}")
+        # Print the model architecture
+        # print(f"Model Architecture:\n {model}")
+        print(summary(model, input_size=(2, 3, 224, 224, 144), depth=6))
+        # print(summary(model, input_size=(1, 64, 64, 64)))
+
     return model
 
 def create_SegResNet(in_channels, device):

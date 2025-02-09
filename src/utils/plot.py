@@ -40,15 +40,21 @@ def background_standardize(tensor):
     tensor[torch.abs(tensor) <  0.03] = min_ # (max_+min_)/2
     return tensor
 
-def brain_plot(img, channels = ["FLAIR", "T1w", "T1Gd", "T2w"], h_index=77):
+def brain_plot(img, channels = ["FLAIR", "T1w", "T1Gd", "T2w"], h_index=77, horiz=True, no_batch=False):
+    if no_batch:
+        img = img.unsqueeze(dim=0)
     num_channels = len(channels)
-    fig, axes = plt.subplots(num_channels, 1, figsize=(3*num_channels, 2*num_channels), constrained_layout=True)
+    if horiz:
+        fig, axes = plt.subplots(1, num_channels, figsize=(3*num_channels, 0.7*num_channels), constrained_layout=True)
+    else:
+        fig, axes = plt.subplots(num_channels, 1, figsize=(0.4*num_channels, 1.5*num_channels), constrained_layout=True)
     axes = np.atleast_1d(axes)
 
     for i in range(num_channels):
         axes[i].set_title(channels[i])
-        brain_slice = img[0, i, :, :, h_index].detach().cpu().T
-        print(f"sum: {brain_slice.sum().item()}")
+        brain_img = img[0, i, ...].detach().cpu()
+        print(f"{channels[i]}:\t{brain_img.mean().item():.3f} ± {brain_img.std().item():.3f} [{brain_img.min().item():.3f}, {brain_img.max().item():.3f}]")
+        brain_slice = brain_img[..., h_index].T
         im = axes[i].imshow(brain_slice, cmap="gray")
         fig.colorbar(im, ax=axes[i])
         axes[i].set_xticks([])
@@ -170,3 +176,30 @@ def plot_training_tumor_seg(epoch_loss_values, metric_values, metric_values_tc, 
     plt.ylim((0, 1))
     plt.plot(x, y, color="purple")
     plt.show()
+
+def find_ratio_of_ones(tensor):
+    total_elements = tensor.numel()
+    count_ones = torch.sum(tensor)
+    ratio = count_ones.float() / total_elements
+    return ratio.item()
+
+def tensor_to_sorted_tuple(tensor):
+    unique_values, counts = torch.unique(tensor, return_counts=True)
+    result = list(zip(unique_values.tolist(), counts.tolist()))
+    result.sort(key=lambda x: x[1], reverse=True)
+    return tuple(result)
+    
+def find_centroid_3d(tensor):
+    print(f"TC: {find_ratio_of_ones(tensor)*100:.5f}%")
+    indices = torch.nonzero(tensor, as_tuple=False)
+
+    # print(len(indices))
+    # print(tensor_to_sorted_tuple(indices[:, 2]))
+
+    if indices.shape[0] == 0:
+        shape = torch.tensor(tensor.shape, dtype=torch.float32)
+        midpoint = (shape - 1) / 2
+        return midpoint.round().to(torch.int64)
+
+    centroid = torch.mean(indices.float(), dim=0).round().to(torch.int64)
+    return centroid
