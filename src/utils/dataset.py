@@ -16,12 +16,12 @@ DATA_PATH = {
 }
 
 SYNTH_DATA_PATH = {
-    'BraTS_2017': '/scratch1/sachinsa/data/contr_generated/run_32'
+    'BraTS_2017': '/scratch1/sachinsa/data/contr_generated/run_111'
 }
 
 # TODO: Study MONAI DecathloanDataset and CacheDataset class to improve this code
 class BraTSDataset(Dataset):
-    def __init__(self, version, synth=False,
+    def __init__(self, version, synth=False, processed_path='',
      section='training', train_ratio=0.8, transform=None, seed=0):
         self.version = version
         self.synth = synth
@@ -34,7 +34,10 @@ class BraTSDataset(Dataset):
                 [int(filepath['image'][17:-7]) for filepath in self.properties['training']])
             self._prune()
             if synth:
-                self.processed_root_dir = SYNTH_DATA_PATH[f'BraTS_{version}']
+                if processed_path == '':
+                    self.processed_root_dir = SYNTH_DATA_PATH[f'BraTS_{version}']
+                else:
+                    self.processed_root_dir = processed_path
         else:
             print(f'Invalid version: {version}')
             return
