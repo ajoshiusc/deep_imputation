@@ -15,30 +15,29 @@ DATA_PATH = {
     'BraTS_2017': '/scratch1/sachinsa/data/Task01_BrainTumour',
 }
 
-# PROCESSED_DATA_PATH = {
-#     'BraTS_2017': '/scratch1/sachinsa/data/contr_generated/run_40'
-# }
-
-T1GD_DATA_PATH = {
-    'BraTS_2017': '/scratch1/sachinsa/data/contr_generated/run_32'
+SYNTH_DATA_PATH = {
+    'BraTS_2017': '/scratch1/sachinsa/data/contr_generated/run_111'
 }
 
-# TODO: Study MONAI DecathloanDataset and CacheDataset class to improve this class
+# TODO: Study MONAI DecathloanDataset and CacheDataset class to improve this code
 class BraTSDataset(Dataset):
-    def __init__(self, version, processed=False, section='training', train_ratio=0.8, transform=None, seed=0, has_mask=True, has_label=True, load_t1gd=False):
+    def __init__(self, version, synth=False, processed_path='',
+     section='training', train_ratio=0.8, transform=None, seed=0):
         self.version = version
-        self.processed = processed or load_t1gd
+        self.synth = synth
         self.root_dir = DATA_PATH[f'BraTS_{version}']
         np.random.seed(seed)
 
         if version[:4] == '2017':
             self.properties = loadBRATS2017(self.root_dir)
-            self.ids = np.array([int(filepath['image'][17:-7]) for filepath in self.properties['training']])
+            self.ids = np.array(
+                [int(filepath['image'][17:-7]) for filepath in self.properties['training']])
             self._prune()
-            if processed:
-                self.processed_root_dir = PROCESSED_DATA_PATH[f'BraTS_{version}']
-            if load_t1gd:
-                self.processed_root_dir = T1GD_DATA_PATH[f'BraTS_{version}']
+            if synth:
+                if processed_path == '':
+                    self.processed_root_dir = SYNTH_DATA_PATH[f'BraTS_{version}']
+                else:
+                    self.processed_root_dir = processed_path
         else:
             print(f'Invalid version: {version}')
             return
@@ -64,13 +63,15 @@ class BraTSDataset(Dataset):
         return len(self.ids)
 
     def __getitem__(self, index):
-        # imagePath = os.path.normpath(os.path.join(self.root_dir,self.properties['training'][index]['image']))
-        imagePath = os.path.normpath(os.path.join(self.root_dir,'imagesTr',f'BRATS_{self.ids[index]:03d}.nii.gz'))
-        if self.processed:
-            imagePath = os.path.normpath(os.path.join(self.processed_root_dir,f'BRATS_{self.ids[index]:03d}.nii.gz'))
+        imagePath = os.path.normpath(os.path.join(
+            self.root_dir,'imagesTr',f'BRATS_{self.ids[index]:03d}.nii.gz'))
+        if self.synth:
+            imagePath = os.path.normpath(os.path.join(
+                self.processed_root_dir,f'BRATS_{self.ids[index]:03d}.nii.gz'))
         filepath = {
             "image": imagePath,
-            "label": os.path.normpath(os.path.join(self.root_dir,'labelsTr',f'BRATS_{self.ids[index]:03d}.nii.gz'))
+            "label": os.path.normpath(os.path.join(
+                self.root_dir,'labelsTr',f'BRATS_{self.ids[index]:03d}.nii.gz'))
         }
         image_dict = self.transform(filepath)
 
